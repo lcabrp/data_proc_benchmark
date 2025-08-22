@@ -1,0 +1,92 @@
+[
+  {
+    "timestamp": "2025-08-13T08:00:00Z",
+    "source_ip": "192.168.1.100",
+    "destination_ip": "10.0.0.5",
+    "port": 22,
+    "event": "Failed SSH login",
+    "severity": "warning",
+    "action": "blocked"
+  },
+  {
+    "timestamp": "2025-08-13T08:05:00Z",
+    "source_ip": "192.168.1.101",
+    "destination_ip": "10.0.0.5",
+    "port": 3389,
+    "event": "RDP brute force attempt",
+    "severity": "critical",
+    "action": "dropped"
+  },
+  {
+    "timestamp": "2025-08-13T08:05:05Z",
+    "source_ip": "192.168.1.101",
+    "destination_ip": "10.0.0.5",
+    "port": 3389,
+    "event": "RDP brute force attempt",
+    "severity": "critical",
+    "action": "dropped"
+  },
+  {
+    "timestamp": "2025-08-13T08:10:00Z",
+    "source_ip": "192.168.1.102",
+    "destination_ip": "10.0.0.5",
+    "port": 80,
+    "event": "Web attack",
+    "severity": "warning",
+    "action": "blocked"
+  },
+  {
+    "timestamp": "2025-08-13T08:15:00Z",
+    "source_ip": "192.168.1.103",
+    "destination_ip": "10.0.0.5",
+    "port": 443,
+    "event": "SSL attack",
+    "severity": "critical",
+    "action": "dropped"
+  },
+  {
+    "timestamp": "2025-08-13T08:20:00Z",
+    "source_ip": "192.168.1.104",
+    "destination_ip": "10.0.0.5",
+    "port": 53,
+    "event": "DNS attack",
+    "severity": "info",
+    "action": "allowed"
+  },
+  {
+    "timestamp": "2025-08-13T08:25:00Z",
+    "source_ip": "192.168.1.105",
+    "destination_ip": "10.0.0.5",
+    "port": 8080,
+    "event": "Proxy attack",
+    "severity": "warning",
+    "action": "blocked"
+  },
+  {
+    "timestamp": "2025-08-13T08:30:00Z",
+    "source_ip": "192.168.1.106",
+    "destination_ip": "10.0.0.5",
+    "port": 8081,
+    "event": "Proxy attack",
+    "severity": "critical",
+    "action": "dropped"
+  },
+  {
+    "timestamp": "2025-08-13T08:35:00Z",
+    "source_ip": "192.168.1.107",
+    "destination_ip": "10.0.0.5",
+    "port": 8082,
+    "event": "Proxy attack",
+    "severity": "info",
+    "action": "allowed"
+  },
+  {
+    "timestamp": "2025-08-13T08:40:00Z",
+    "source_ip": "192.168.1.108",
+    "destination_ip": "10.0.0.5",
+    "port": 8083,
+    "event": "Proxy attack",
+    "severity": "warning",
+    "action": "blocked"
+  }
+]
