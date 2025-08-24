@@ -1,80 +1,63 @@
+"""
+Host Information Collection Utilities
+
+This module provides utilities for collecting system information across different platforms.
+Optimized for reliable operation without blocking WMI calls on Windows.
+"""
+
+import datetime
 import platform
 import socket
 import psutil
-from datetime import datetime
+from typing import Dict, Any, Optional
 
 def get_host_info() -> dict:
-    """Collect comprehensive host system information as a dict, with Windows-specific enhancements and GPU info."""
-    info = {
-        'timestamp': datetime.now().isoformat(),
-        'hostname': socket.gethostname(),
-        'platform': platform.platform(),
-        'system': platform.system(),
-        'release': platform.release(),
-        'version': platform.version(),
-        'machine': platform.machine(),
-        'processor': platform.processor(),
-        'cpu_count_logical': psutil.cpu_count(logical=True),
-        'cpu_count_physical': psutil.cpu_count(logical=False),
-        'cpu_freq_max': psutil.cpu_freq().max if psutil.cpu_freq() else 'N/A',
-        'cpu_freq_current': psutil.cpu_freq().current if psutil.cpu_freq() else 'N/A',
-        'memory_total_gb': round(psutil.virtual_memory().total / (1024**3), 2),
-        'memory_available_gb': round(psutil.virtual_memory().available / (1024**3), 2),
-        'python_version': platform.python_version(),
-        'python_implementation': platform.python_implementation(),
-        'cpu_brand': 'Unknown',
-        'cpu_arch': 'Unknown',
-        'gpu_name': 'Unknown',
-        'gpu_memory_total_mb': 'Unknown'
-    }
-
-    # Windows-specific CPU info using WMI
-    if info['system'] == 'Windows':
+    """
+    Collect basic host system information without potentially blocking operations.
+    Returns:
+        dict: Host system information.
+    """
+    try:
+        info = {
+            'timestamp': datetime.datetime.now().isoformat(),
+            'hostname': socket.gethostname(),
+            'platform': platform.platform(),
+            'system': platform.system(),
+            'release': platform.release(),
+            'version': platform.version(),
+            'machine': platform.machine(),
+            'processor': platform.processor(),
+            'cpu_count_logical': psutil.cpu_count(logical=True),
+            'cpu_count_physical': psutil.cpu_count(logical=False),
+        }
+        
+        # Add CPU frequency if available (in correct order)
         try:
-            import wmi
-            w = wmi.WMI()
-            cpu = w.Win32_Processor()[0]
-            info['cpu_brand'] = cpu.Name.strip()
-            arch_map = {
-                0: 'x86',
-                1: 'MIPS',
-                2: 'Alpha',
-                3: 'PowerPC',
-                5: 'ARM',
-                6: 'Itanium',
-                9: 'x64'
-            }
-            info['cpu_arch'] = arch_map.get(cpu.Architecture, 'Unknown')
-            # GPU info via WMI
-            try:
-                gpus = w.Win32_VideoController()
-                if gpus:
-                    # Pick GPU with largest AdapterRAM
-                    best_gpu = None
-                    max_ram = 0
-                    for gpu in gpus:
-                        ram = int(gpu.AdapterRAM) if gpu.AdapterRAM else 0
-                        if ram > max_ram:
-                            max_ram = ram
-                            best_gpu = gpu
-                    if best_gpu:
-                        info['gpu_name'] = best_gpu.Name.strip()
-                        info['gpu_memory_total_mb'] = max_ram // (1024**2)
-                    else:
-                        info['gpu_name'] = 'Unknown'
-                        info['gpu_memory_total_mb'] = 'Unknown'
-                else:
-                    info['gpu_name'] = 'Unknown'
-                    info['gpu_memory_total_mb'] = 'Unknown'
-            except Exception:
-                info['gpu_name'] = 'Unknown'
-                info['gpu_memory_total_mb'] = 'Unknown'
+            cpu_freq = psutil.cpu_freq()
+            if cpu_freq:
+                info['cpu_freq_max'] = cpu_freq.max
+                info['cpu_freq_current'] = cpu_freq.current
+            else:
+                info['cpu_freq_max'] = 'N/A'
+                info['cpu_freq_current'] = 'N/A'
         except Exception:
-            # Fallback to platform.processor if WMI fails
-            info['cpu_brand'] = info['processor']
-            info['cpu_arch'] = info['machine']
-    else:
-        # Try cpuinfo for Linux/macOS
+            info['cpu_freq_max'] = 'N/A'
+            info['cpu_freq_current'] = 'N/A'
+        
+        # Add memory info (in correct order)
+        try:
+            mem = psutil.virtual_memory()
+            info['memory_total_gb'] = round(mem.total / (1024**3), 2)
+            info['memory_available_gb'] = round(mem.available / (1024**3), 2)
+        except Exception:
+            info['memory_total_gb'] = 'N/A'
+            info['memory_available_gb'] = 'N/A'
+        
+        # Add Python info (in correct order)
+        info['python_version'] = platform.python_version()
+        info['python_implementation'] = platform.python_implementation()
+        
+        # Try cpuinfo for enhanced CPU info
         try:
             import cpuinfo
             cpu_info = cpuinfo.get_cpu_info()
@@ -86,43 +69,77 @@ def get_host_info() -> dict:
         except Exception:
             info['cpu_brand'] = info['processor']
             info['cpu_arch'] = info['machine']
-        # GPU info for Linux/macOS using GPUtil
-        try:
-            import GPUtil
-            gpus = GPUtil.getGPUs()
-            if gpus:
-                info['gpu_name'] = gpus[0].name
-                info['gpu_memory_total_mb'] = int(gpus[0].memoryTotal)
-        except Exception:
-            info['gpu_name'] = 'Unknown'
-            info['gpu_memory_total_mb'] = 'Unknown'
+        
+        return info
+    except Exception as e:
+        # Top-level fallback: return minimal info
+        return {
+            'timestamp': datetime.datetime.now().isoformat(),
+            'hostname': socket.gethostname(),
+            'error': f'Host info collection failed: {e}'
+        }
 
-    # Normalize processor string for vendor/model/family (optional)
-    proc_str = info.get('processor', '')
-    if proc_str:
-        if 'GenuineIntel' in proc_str:
-            info['cpu_vendor'] = 'Intel'
-        elif 'AuthenticAMD' in proc_str:
-            info['cpu_vendor'] = 'AMD'
-        else:
-            info['cpu_vendor'] = 'Unknown'
-        # Extract family/model if possible
-        import re
-        match = re.search(r'Family (\d+) Model (\d+)', proc_str)
-        if match:
-            info['cpu_family'] = match.group(1)
-            info['cpu_model'] = match.group(2)
-        else:
-            info['cpu_family'] = ''
-            info['cpu_model'] = ''
-    else:
-        info['cpu_vendor'] = ''
-        info['cpu_family'] = ''
-        info['cpu_model'] = ''
 
-    return info
+class SystemInfo:
+    """Comprehensive system information collection with platform integration."""
+    
+    @staticmethod
+    def get_all() -> Dict[str, Any]:
+        """
+        Get comprehensive system information including platform flags and library availability.
+        
+        Returns:
+            Dict[str, Any]: Complete system information
+        """
+        from .platform_utils import PlatformDetector
+        
+        info = get_host_info()
+        
+        # Add platform flags
+        platform_flags = PlatformDetector.get_platform_flags()
+        info.update(platform_flags)
+        
+        # Add library availability
+        lib_availability = PlatformDetector.check_library_availability()
+        info.update(lib_availability)
+        
+        # Add recommended Modin engine
+        info['recommended_modin_engine'] = PlatformDetector.get_recommended_modin_engine()
+        
+        return info
+    
+    @staticmethod
+    def get_platform_summary() -> str:
+        """Get a concise platform summary string."""
+        flags = SystemInfo.get_platform_flags()
+        if flags['IS_WINDOWS']:
+            return f"Windows ({'WSL' if flags['IS_WSL'] else 'Native'})"
+        elif flags['IS_LINUX']:
+            return "Linux"
+        elif flags['IS_MACOS']:
+            return "macOS"
+        else:
+            return "Unknown"
+    
+    @staticmethod
+    def get_platform_flags() -> Dict[str, bool]:
+        """Get platform detection flags."""
+        from .platform_utils import PlatformDetector
+        return PlatformDetector.get_platform_flags()
+
 
 if __name__ == "__main__":
+    # Demo usage
+    print("=== Host Information ===")
     host_info = get_host_info()
     for key, value in host_info.items():
         print(f"{key}: {value}")
+    
+    print("\n=== Complete System Information ===")
+    system_info = SystemInfo.get_all()
+    for key, value in system_info.items():
+        if not key.startswith('_'):  # Skip internal keys
+            print(f"{key}: {value}")
+    
+    print(f"\n=== Platform Summary ===")
+    print(f"Platform: {SystemInfo.get_platform_summary()}")

@@ -1,133 +1,111 @@
-# Comprehensive Data Processing Benchmark
+# 🚀 Data Processing Performance Benchmark
 
-This enhanced benchmark tests multiple data processing libraries across different types of operations using a 10-million record dataset.
+A comprehensive benchmarking suite that compares the performance of popular Python data processing libraries using real-world datasets. Perfect for data scientists, engineers, and researchers who want to make informed decisions about which library to use for their projects.
 
-## Features
+## 🎯 What This Project Does
 
-### 🚀 **Libraries Tested**
-- **Pandas**: Traditional data processing library
-- **Modin**: Distributed pandas with Dask backend
-- **Polars**: Fast DataFrame library written in Rust
-- **DuckDB**: In-process SQL OLAP database
-- **FireDucks**: High-performance pandas-compatible library (Linux/macOS only)
+This benchmark tests **5 major data processing libraries** against a **10-million record synthetic log dataset**, measuring performance across **4 different operation types** that mirror real-world data analysis tasks.
 
-### 📊 **Benchmark Operations**
+### � Libraries Compared
 
-1. **Filter & Group** (Original operation)
-   - Filter records where `status_code == 200`
-   - Group by `source_ip` and sum `bytes`
+| Library | Description | Best For |
+|---------|-------------|----------|
+| **🐼 Pandas** | The standard data analysis library | General data manipulation, small to medium datasets |
+| **⚡ Modin** | Drop-in pandas replacement with parallelization | Scaling pandas operations to larger datasets |
+| **🦀 Polars** | Rust-powered DataFrame library | High performance, memory efficiency |
+| **🦆 DuckDB** | In-process analytical database | SQL analytics, OLAP operations |
+| **🔥 FireDucks** | High-performance pandas alternative | Enterprise-scale data processing (Linux/macOS) |
 
-2. **Statistical Analysis** (New)
-   - Group by `event_type`
-   - Calculate mean, std, min, max for `bytes`
-   - Calculate mean, median for `response_time_ms` and `risk_score`
+### 🧪 Benchmark Operations
 
-3. **Complex Join & Window Functions** (New)
-   - Create summary statistics per `source_ip`
-   - Join back to main dataset
-   - Add ranking by `bytes` within each `event_type`
-   - Return top 10 records per event type
+1. **🔍 Filter & Group**: Find the top bandwidth consumers by filtering active connections and grouping by source IP
+2. **📊 Statistical Analysis**: Generate comprehensive statistics across different event types
+3. **🔗 Complex Joins**: Create enriched datasets with rankings and aggregated metrics
+4. **⏰ Time Series**: Analyze patterns across hourly time buckets
 
-4. **Time Series Analysis** (New)
-   - Extract hour from timestamp
-   - Group by hour and `event_type`
-   - Aggregate bytes, response times, and risk scores
+## 🚀 Quick Start
 
-### 💻 **Host Information Collected**
-- Hostname and platform details
-- CPU information (brand, cores, frequency)
-- Memory information (total, available)
-- Python version and implementation
-- Timestamp of benchmark run
+1. **Clone and Setup**:
+   ```bash
+   git clone <repository-url>
+   cd data_proc_benchmark
+   pip install -r requirements.txt
+   ```
 
-### 📈 **Results Storage**
-- Results saved to `data/benchmark_results.csv`
-- Each row represents one benchmark run
-- Columns include host info + timing results for each library/operation
-- Supports multiple runs for comparison across different machines
+2. **Run the Enhanced Benchmark** (Recommended):
+   ```bash
+   python scripts/benchmark/benchmark_01.py
+   ```
 
-## Usage
+3. **View Results**:
+   Open `data/benchmark_results.csv` to see detailed performance comparisons across all libraries.
 
-### Basic Run
-```bash
-python scripts/tests/benchmark.py
-```
-
-### Install Optional Dependencies (Recommended)
-```bash
-python scripts/install_benchmark_deps.py
-```
-This installs `py-cpuinfo` for detailed CPU information.
-
-### View Results
-The CSV file `data/benchmark_results.csv` contains:
-- Host system information
-- Timing results for each operation and library
-- Can be opened in Excel, imported into analysis tools, etc.
-
-## Sample Output
+## 📈 Sample Results
 
 ```
-============================================================
-COMPREHENSIVE DATA PROCESSING BENCHMARK
-============================================================
-Collecting host information...
-Running on: MyComputer (Windows-11-10.0.26100-SP0)
-CPU: Intel Core i7-12700H (16 logical cores)
-Memory: 32.0 GB total
-
 FILTER_GROUP Operation:
-  Fastest: polars (0.90s)
-  polars    :   0.90s (x1.0)
-  duckdb    :   0.76s (x1.2)
-  modin     :  10.72s (x0.1)
-  pandas    :  14.23s (x0.1)
+  Fastest: polars (1.55s)
+  polars    :   1.55s (x1.0)
+  duckdb    :   4.04s (x0.4)
+  pandas    :  22.92s (x0.1)
+  modin     :  25.46s (x0.1)
 
-Results saved to: data/benchmark_results.csv
+TIMESERIES Operation:
+  Fastest: duckdb (5.25s)
+  duckdb    :   5.25s (x1.0)
+  polars    :   9.04s (x0.6)
+  pandas    :  27.26s (x0.2)
+  modin     :  37.55s (x0.1)
 ```
 
-## CSV Column Structure
+## 🎛️ Available Benchmark Versions
 
-### Host Information Columns
-- `timestamp`: When benchmark was run
-- `hostname`: Computer name
-- `platform`, `system`, `release`, `version`: OS details
-- `machine`, `processor`: Hardware architecture
-- `cpu_count_logical`, `cpu_count_physical`: CPU core counts
-- `cpu_freq_max`, `cpu_freq_current`: CPU frequencies
-- `memory_total_gb`, `memory_available_gb`: Memory info
-- `python_version`, `python_implementation`: Python details
-- `cpu_brand`, `cpu_arch`: Detailed CPU info (if py-cpuinfo installed)
+| Script | Purpose | Best For |
+|--------|---------|----------|
+| `benchmark_01.py` | **Production** - Enhanced with cross-platform optimizations | Most users - reliable results across Windows/Linux/macOS |
+| `benchmark.py` | **Reference** - Original implementation | High-memory systems, research comparisons |
+| `benchmark_02-04.py` | **Development** - Various experimental approaches | Learning about different optimization strategies |
 
-### Timing Result Columns
-Format: `{operation}_{library}_seconds`
-- `filter_group_pandas_seconds`
-- `filter_group_modin_seconds`
-- `filter_group_polars_seconds`
-- `filter_group_duckdb_seconds`
-- `filter_group_fireducks_seconds`
-- `statistics_pandas_seconds`
-- ... (and so on for all operations)
+## 🌐 Cross-Platform Compatibility
 
-## Multi-Machine Comparison
+✅ **Windows**: Optimized Dask configuration, thread-based workers  
+✅ **Linux**: Full library support including FireDucks  
+✅ **macOS**: Complete compatibility with all libraries  
+✅ **WSL2**: Tested and optimized for Windows Subsystem for Linux  
 
-To compare performance across different machines:
+## 📊 Data Collection
 
-1. Run the benchmark on each machine
-2. The results append to the same CSV file
-3. Use the host information columns to identify different machines
-4. Analyze performance differences based on hardware specs
+Each benchmark run automatically collects:
+- **System Information**: CPU, memory, platform details
+- **Performance Metrics**: Execution times for each library/operation combination
+- **Environment Details**: Python version, library versions
+- **Results History**: All runs saved to CSV for trend analysis
 
-## Notes
+## 🎯 Use Cases
 
-- **FireDucks**: Only available on Linux/macOS, shows 0.00s on Windows (not actually running)
-- **Modin**: May fail on large operations due to memory limits
-- **Error Handling**: Failed operations show "N/A" in results
-- **Reproducibility**: Multiple runs on same machine help identify performance variance
+- **Library Selection**: Choose the best library for your data size and operations
+- **Performance Monitoring**: Track performance changes across different environments
+- **Hardware Planning**: Understand how different hardware affects data processing speed
+- **Research & Development**: Compare optimization strategies and configurations
 
-## Extending the Benchmark
+## 📚 Documentation
 
-To add new operations:
-1. Create functions for each library (e.g., `pandas_new_operation()`)
-2. Add to the `operations` dictionary in `run_all_benchmarks()`
-3. The CSV will automatically include new timing columns
+- **[Technical Details](TECHNICAL.md)**: Deep dive into implementation, optimizations, and benchmark evolution
+- **[Data Generation](scripts/log-gen/)**: Synthetic dataset creation using `test_generator_01.py`
+- **[Results Analysis](data/)**: CSV output format and analysis guidelines
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Add new operations or library support
+4. Test across different platforms
+5. Submit a pull request
+
+## 📄 License
+
+This project is open source. See LICENSE file for details.
+
+---
+
+**💡 Pro Tip**: Start with `benchmark_01.py` for reliable cross-platform results, then experiment with other versions based on your specific needs!

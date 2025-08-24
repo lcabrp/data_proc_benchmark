@@ -25,7 +25,7 @@ if platform.system() in ['Linux', 'Darwin']:  # Darwin = macOS
     except ImportError:
         pass
 
-CSV_PATH = "data/synthetic_logs_test.csv"
+CSV_PATH = "data/raw/synthetic_logs_test.csv"
 RESULTS_CSV_PATH = "data/benchmark_results.csv"
 
 def get_host_info():
@@ -86,6 +86,11 @@ def setup_modin():
 def run_benchmark_operation(library_name, operation_func, operation_name):
     """Generic benchmark runner that returns timing information"""
     try:
+        # Check if this is a FireDucks operation when FireDucks is not available
+        if library_name.lower() == "fireducks" and not FIREDUCKS_AVAILABLE:
+            print(f"{library_name} {operation_name} duration: 0.00s")
+            return None, None
+        
         start = time.time()
         result = operation_func()
         duration = time.time() - start
@@ -332,13 +337,22 @@ def save_results_to_csv(results, host_info):
     # Prepare the row data
     row_data = host_info.copy()
 
+def save_results_to_csv(results, host_info):
+    """Save benchmark results to CSV file"""
+    # Prepare the row data
+    row_data = host_info.copy()
+
     # Add timing results
     for operation, timings in results.items():
         for library, duration in timings.items():
             if duration is not None:
                 row_data[f"{operation}_{library}_seconds"] = duration
             else:
-                row_data[f"{operation}_{library}_seconds"] = "N/A"
+                # Use 0 for FireDucks when not available, N/A for other failures
+                if library.lower() == "fireducks" and not FIREDUCKS_AVAILABLE:
+                    row_data[f"{operation}_{library}_seconds"] = 0
+                else:
+                    row_data[f"{operation}_{library}_seconds"] = "N/A"
 
     # Check if CSV file exists to determine if we need headers
     file_exists = os.path.exists(RESULTS_CSV_PATH)
