@@ -25,20 +25,88 @@ This benchmark tests **5 major data processing libraries** against a **10-millio
 
 ## 🚀 Quick Start
 
-1. **Clone and Setup**:
+### 📦 Method 1: Using uv (Recommended - Faster!)
+
+**uv** is a lightning-fast Python package manager that makes setup incredibly quick.
+
+1. **Install uv** (choose the easiest option):
+   ```bash
+   # Option A: Simple pip install (easiest if you have Python)
+   pip install uv
+   
+   # Option B: Official installer  
+   # Windows (PowerShell)
+   irm https://astral.sh/uv/install.ps1 | iex
+   
+   # macOS/Linux
+   curl -LsSf https://astral.sh/uv/install.sh | sh
+   ```
+
+2. **Clone and Setup**:
    ```bash
    git clone <repository-url>
    cd data_proc_benchmark
-   pip install -r requirements.txt
+   uv sync  # Creates virtual environment and installs all dependencies
+   # If 'uv' command not found, use: python -m uv sync
    ```
 
-2. **Run the Enhanced Benchmark** (Recommended):
+3. **Run the Enhanced Benchmark**:
+   ```bash
+   uv run python scripts/benchmark/benchmark_01.py
+   # If 'uv' command not found, use: python -m uv run python scripts/benchmark/benchmark_01.py
+   ```
+
+### 📦 Method 2: Traditional pip Approach
+
+If you prefer the traditional Python workflow:
+
+1. **Clone the Repository**:
+   ```bash
+   git clone <repository-url>
+   cd data_proc_benchmark
+   ```
+
+2. **Create Virtual Environment**:
+   ```bash
+   # Create virtual environment
+   python -m venv .venv
+   
+   # Activate it
+   # Windows:
+   .venv\Scripts\activate
+   # macOS/Linux:
+   source .venv/bin/activate
+   ```
+
+3. **Install Dependencies**:
+   ```bash
+   pip install -e .
+   ```
+
+4. **Run the Benchmark**:
    ```bash
    python scripts/benchmark/benchmark_01.py
    ```
 
-3. **View Results**:
-   Open `data/benchmark_results.csv` to see detailed performance comparisons across all libraries.
+### 📊 View Your Results
+
+After running either method above, open `data/benchmark_results.csv` to see detailed performance comparisons across all libraries.
+
+### 🆘 First-Time Setup Help
+
+**New to Python development?** Here's what you need:
+
+1. **Python 3.13+**: Download from [python.org](https://python.org) if you don't have it
+2. **Git**: Download from [git-scm.com](https://git-scm.com) for cloning repositories
+3. **Choose your method**: 
+   - **uv** = Fast and modern (recommended for new projects)
+   - **pip** = Traditional and widely supported
+
+**Common Issues:**
+- **"python command not found"**: Make sure Python is in your PATH
+- **"git command not found"**: Install Git and restart your terminal
+- **"uv command not found"**: If uv isn't in your PATH after installation, use `python -m uv` instead of `uv`
+- **Permission errors on Windows**: Run PowerShell as Administrator for uv installation
 
 ## 📈 Sample Results
 
@@ -58,13 +126,12 @@ TIMESERIES Operation:
   modin     :  37.55s (x0.1)
 ```
 
-## 🎛️ Available Benchmark Versions
+## 🎛️ Available Benchmark Scripts
 
 | Script | Purpose | Best For |
 |--------|---------|----------|
-| `benchmark_01.py` | **Production** - Enhanced with cross-platform optimizations | Most users - reliable results across Windows/Linux/macOS |
+| `benchmark_01.py` | **Production** - Enhanced with cross-platform optimizations | **Most users** - reliable results across Windows/Linux/macOS |
 | `benchmark.py` | **Reference** - Original implementation | High-memory systems, research comparisons |
-| `benchmark_02-04.py` | **Development** - Various experimental approaches | Learning about different optimization strategies |
 
 ## 🌐 Cross-Platform Compatibility
 
