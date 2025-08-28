@@ -6,7 +6,7 @@ A comprehensive benchmarking suite that compares the performance of popular Pyth
 
 This benchmark tests **5 major data processing libraries** against a **10-million record synthetic log dataset**, measuring performance across **4 different operation types** that mirror real-world data analysis tasks.
 
-### � Libraries Compared
+### 📚 Libraries Compared
 
 | Library | Description | Best For |
 |---------|-------------|----------|

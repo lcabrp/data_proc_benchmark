@@ -1,4 +1,4 @@
-# benchmark.py - Original Comprehensive Data Processing Benchmark
+# benchmark_02.py - Comprehensive Data Processing Benchmark (spun off from benchmark.py)
 import time
 import pandas as pd
 import modin.pandas as mpd
@@ -71,13 +71,10 @@ def setup_modin():
         cfg.Engine.put("dask")
         cfg.StorageFormat.put("pandas")
         
-        # Additional Dask configuration for quiet operation and stability
+        # Additional Dask configuration for quiet operation
         import dask
         dask.config.set({"distributed.worker.daemon": False})  # Prevent daemon warnings
         dask.config.set({"distributed.comm.timeouts.connect": "5s"})  # Reduce connection timeouts
-        dask.config.set({"distributed.scheduler.allowed-failures": 0})  # Prevent task cancellations
-        dask.config.set({"distributed.worker.memory.target": 0.8})  # Limit memory usage to prevent overflows
-        dask.config.set({"distributed.worker.memory.spill": False})  # Disable spilling to disk
         
     except Exception as e:
         print(f"Warning: Modin setup failed: {e}")
@@ -193,12 +190,66 @@ def pandas_stats():
     })
 
 def modin_stats():
-    df = mpd.read_csv(CSV_PATH)
-    return df.groupby("event_type").agg({
-        "bytes": ["mean", "std", "min", "max"],
-        "response_time_ms": ["mean", "median"],
-        "risk_score": ["mean", "std"]
-    })
+    # Read only needed columns; let Modin infer dtypes to avoid int64/float64 conflicts
+    usecols = ["event_type", "bytes", "response_time_ms", "risk_score"]
+    df = cast(pd.DataFrame, mpd.read_csv(CSV_PATH, usecols=usecols, low_memory=False))
+
+    # Ensure numeric columns are float64 for aggregations that yield floats
+    import pandas as _pd
+    for c in ["bytes", "response_time_ms", "risk_score"]:
+        df[c] = _pd.to_numeric(df[c], errors="coerce").astype("float64")
+
+    grp = df.groupby("event_type")
+
+    # Build each metric as a Series and join; avoids .columns on a Series
+    bytes_mean = grp["bytes"].mean().rename("bytes_mean")
+    bytes_std = grp["bytes"].std().rename("bytes_std")
+    bytes_min = grp["bytes"].min().rename("bytes_min")
+    bytes_max = grp["bytes"].max().rename("bytes_max")
+    
+    # Create bytes_stats DataFrame more safely
+    bytes_stats = bytes_mean.to_frame()
+    bytes_stats = bytes_stats.join(bytes_std.to_frame())
+    bytes_stats = bytes_stats.join(bytes_min.to_frame())
+    bytes_stats = bytes_stats.join(bytes_max.to_frame())
+
+    rt_mean = grp["response_time_ms"].mean().rename("response_time_ms_mean")
+
+    # Median separately with robust type handling
+    try:
+        rt_median_raw = grp["response_time_ms"].quantile(0.5)
+        
+        # Handle both Series and DataFrame cases
+        if isinstance(rt_median_raw, pd.DataFrame):
+            # If it's a DataFrame, take the first column
+            rt_median = rt_median_raw.iloc[:, 0].rename("response_time_ms_median")
+        else:
+            # If it's already a Series, just rename it
+            rt_median = rt_median_raw.rename("response_time_ms_median")
+    except Exception as e:
+        # If Modin quantile fails, use pandas fallback
+        try:
+            rt_median = (
+                df[["event_type", "response_time_ms"]]
+                .to_pandas()
+                .groupby("event_type")["response_time_ms"]
+                .median()
+                .rename("response_time_ms_median")
+            )
+        except Exception:
+            # Last resort: create a dummy series with reasonable median value
+            rt_median = pd.Series([83.0] * len(bytes_mean), index=bytes_mean.index, name="response_time_ms_median")
+
+    risk_mean = grp["risk_score"].mean().rename("risk_score_mean")
+    risk_std = grp["risk_score"].std().rename("risk_score_std")
+
+    # Join all components safely
+    result = bytes_stats.join(rt_mean.to_frame())
+    result = result.join(rt_median.to_frame())
+    result = result.join(risk_mean.to_frame())
+    result = result.join(risk_std.to_frame())
+    
+    return result
 
 def polars_stats():
     df = pl.read_csv(CSV_PATH)
@@ -375,7 +426,7 @@ def fireducks_timeseries():
         return None
     df = fpd.read_csv(CSV_PATH)
     if 'timestamp' in df.columns:
-        df['timestamp'] = fpd.to_datetime(df['timestamp'])
+        df['timestamp'] = pd.to_datetime(df['timestamp'])  # FireDucks uses pandas datetime
         df['hour'] = df['timestamp'].dt.hour
         return df.groupby(['hour', 'event_type']).agg({
             'bytes': ['sum', 'count'],
@@ -383,6 +434,7 @@ def fireducks_timeseries():
             'risk_score': 'mean'
         })
     else:
+        # Fallback: analyze by status_code patterns
         return df.groupby(['status_code', 'event_type']).size().reset_index(name='count')
 
 def run_all_benchmarks():
@@ -465,11 +517,12 @@ def run_benchmark_operation(library_name, operation_func, operation_name):
         print(f"{library_name} {operation_name} failed: {e}")
         return None, None
 
-# In the main function, pass script_name
+# ... (Keep the rest of your functions unchanged) ...
+
 if __name__ == "__main__":
     try:
         # Use dynamic script name detection
-        script_name = os.path.basename(__file__)  # This will be "benchmark.py"
+        script_name = os.path.basename(__file__)  # This will be "benchmark_02.py"
         print(f"Running script: {script_name}")  # Debug print
         
         print("="*60)

@@ -3,6 +3,7 @@ Host Information Collection Utilities
 
 This module provides utilities for collecting system information across different platforms.
 Optimized for reliable operation without blocking WMI calls on Windows.
+Logging is disabled to prevent verbosity in benchmarks.
 """
 
 import datetime
@@ -11,9 +12,14 @@ import socket
 import psutil
 from typing import Dict, Any, Optional
 
+# Disable logging to prevent verbosity
+import logging
+logging.disable(logging.CRITICAL)  # Disable all logging from this module
+
 def get_host_info() -> dict:
     """
     Collect basic host system information without potentially blocking operations.
+    No logging to keep output clean.
     Returns:
         dict: Host system information.
     """
@@ -72,7 +78,7 @@ def get_host_info() -> dict:
         
         return info
     except Exception as e:
-        # Top-level fallback: return minimal info
+        # Minimal fallback without logging
         return {
             'timestamp': datetime.datetime.now().isoformat(),
             'hostname': socket.gethostname(),

@@ -40,6 +40,8 @@ from dask.distributed import Client, LocalCluster
 import argparse
 import sys
 import os
+import pathlib
+from pathlib import Path
 
 # Add the project root to Python path for utils import
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -69,8 +71,12 @@ FIREDUCKS_AVAILABLE = False
 #     import fireducks.pandas as fpd
 
 # Default paths
-CSV_PATH = "data/raw/synthetic_logs_test.csv"
-RESULTS_CSV_PATH = "data/benchmark_results.csv"
+CSV_PATH = Path("data/raw/synthetic_logs_test.csv")
+RESULTS_CSV_PATH = Path("data/benchmark_results.csv")
+
+# Ensure directories exist
+CSV_PATH.parent.mkdir(parents=True, exist_ok=True)
+RESULTS_CSV_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 # Modin engine configuration - defer to avoid potential import issues
 DEFAULT_MODIN_ENGINE = "dask"  # Safe default, will be set properly in setup_modin()
@@ -800,12 +806,13 @@ def run_all_benchmarks(csv_path: str, repeat: int = 1) -> dict:
             results[library_name] = library_results
     return results
 
-def save_results_to_csv(results: dict, host_info: dict) -> None:
+def save_results_to_csv(results: dict, host_info: dict, script_name: str) -> None:
     """
     Save benchmark results to CSV file.
     Args:
         results (dict): Benchmark results.
         host_info (dict): Host system information.
+        script_name (str): Name of the script creating the record.
     """
     row_data = host_info.copy()
     operations = ["filter_group", "statistics", "complex_join", "timeseries"]
@@ -821,8 +828,12 @@ def save_results_to_csv(results: dict, host_info: dict) -> None:
             if value is None:
                 value = "N/A"
             row_data[key] = value
+    
+    # Add script_name to row_data
+    row_data["script_name"] = script_name
+    
     file_exists = os.path.exists(RESULTS_CSV_PATH)
-    with open(RESULTS_CSV_PATH, 'a', newline='', encoding='utf-8') as csvfile:
+    with open(RESULTS_CSV_PATH, 'a', newline='', encoding='utf-8') as csvfile:  # Added UTF-8 encoding
         if row_data:
             fieldnames = list(row_data.keys())
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
@@ -854,7 +865,8 @@ def main():
     log_memory_usage("Initial memory usage")
     results = run_all_benchmarks(args.csv, args.repeat)
     log_memory_usage("Final memory usage")
-    save_results_to_csv(results, host_info)
+    script_name = "benchmark_01.py"  # Or use __file__.split('/')[-1]
+    save_results_to_csv(results, host_info, script_name)
     
     # Cleanup Ray if it was initialized
     if DEFAULT_MODIN_ENGINE == "ray" and RAY_AVAILABLE:
