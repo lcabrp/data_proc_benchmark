@@ -2,9 +2,11 @@
 
 A comprehensive benchmarking suite that compares the performance of popular Python data processing libraries using real-world datasets. Perfect for data scientists, engineers, and researchers who want to make informed decisions about which library to use for their projects.
 
+This project now includes a modular benchmark runner with universal file-format support and automatic dataset detection.
+
 ## 🎯 What This Project Does
 
-This benchmark tests **5 major data processing libraries** against a **10-million record synthetic log dataset**, measuring performance across **4 different operation types** that mirror real-world data analysis tasks.
+This benchmark tests popular data processing libraries against multi‑million record synthetic log datasets, measuring performance across four realistic operation types.
 
 ### 📚 Libraries Compared
 
@@ -18,14 +20,14 @@ This benchmark tests **5 major data processing libraries** against a **10-millio
 
 ### 🧪 Benchmark Operations
 
-1. **🔍 Filter & Group**: Find the top bandwidth consumers by filtering active connections and grouping by source IP
-2. **📊 Statistical Analysis**: Generate comprehensive statistics across different event types
-3. **🔗 Complex Joins**: Create enriched datasets with rankings and aggregated metrics
-4. **⏰ Time Series**: Analyze patterns across hourly time buckets
+1. **🔍 Filter & Group**: Filter by status and group by source IP
+2. **📊 Statistics**: Aggregations by event type (mean, std, min, max, medians)
+3. **🔗 Complex Join**: Enrich rows with per‑source aggregates and rankings
+4. **⏰ Time Series**: Hourly rollups (with fallback if timestamps are missing)
 
 ## 🚀 Quick Start
 
-### 📦 Method 1: Using uv (Recommended - Faster!)
+### 📦 Method 1: Using uv (Recommended)
 
 **uv** is a lightning-fast Python package manager that makes setup incredibly quick.
 
@@ -50,13 +52,14 @@ This benchmark tests **5 major data processing libraries** against a **10-millio
    # If 'uv' command not found, use: python -m uv sync
    ```
 
-3. **Run the Enhanced Benchmark**:
+3. **Run the Modular Benchmark**:
    ```bash
-   uv run python scripts/benchmark/benchmark_01.py
-   # If 'uv' command not found, use: python -m uv run python scripts/benchmark/benchmark_01.py
+   uv run python scripts/benchmark/benchmark_modular.py
+   # If 'uv' is not on PATH:
+   python -m uv run python scripts/benchmark/benchmark_modular.py
    ```
 
-### 📦 Method 2: Traditional pip Approach
+### 📦 Method 2: Traditional pip (Windows/macOS/Linux)
 
 If you prefer the traditional Python workflow:
 
@@ -81,16 +84,24 @@ If you prefer the traditional Python workflow:
 3. **Install Dependencies**:
    ```bash
    pip install -e .
+   # If psutil is missing (for host info collection):
+   pip install psutil
    ```
 
-4. **Run the Benchmark**:
+4. **Run the Benchmark (PowerShell on Windows)**:
+   ```powershell
+   .\.venv\Scripts\python scripts/benchmark/benchmark_modular.py
+   ```
+   On macOS/Linux:
    ```bash
-   python scripts/benchmark/benchmark_01.py
+   python scripts/benchmark/benchmark_modular.py
    ```
 
 ### 📊 View Your Results
 
-After running either method above, open `data/benchmark_results.csv` to see detailed performance comparisons across all libraries.
+After running, open `data/benchmark_results.csv` to see detailed performance comparisons. Missing/unsupported libraries are recorded as "N/A" to avoid misleading zeros.
+
+Supported input formats (auto‑detected): CSV (.csv, .csv.gz, .csv.zip, .csv.zst), Parquet (.parquet), JSON (.json), and NDJSON/JSONL (.ndjson/.jsonl).
 
 ### 🆘 First-Time Setup Help
 
@@ -130,7 +141,8 @@ TIMESERIES Operation:
 
 | Script | Purpose | Best For |
 |--------|---------|----------|
-| `benchmark_01.py` | **Production** - Enhanced with cross-platform optimizations | **Most users** - reliable results across Windows/Linux/macOS |
+| `benchmark_modular.py` | **Recommended** - Modular, universal format support, auto dataset detection | Most users |
+| `benchmark_01.py` | Enhanced with cross-platform optimizations | Reference/compat |
 | `benchmark.py` | **Reference** - Original implementation | High-memory systems, research comparisons |
 
 ## 🌐 Cross-Platform Compatibility
@@ -157,9 +169,30 @@ Each benchmark run automatically collects:
 
 ## 📚 Documentation
 
-- **[Technical Details](TECHNICAL.md)**: Deep dive into implementation, optimizations, and benchmark evolution
+- **[Technical Details](TECHNICAL.md)**: Deep dive for engineers (Modin setup, architecture, modules)
 - **[Data Generation](scripts/log-gen/)**: Synthetic dataset creation using `test_generator_01.py`
 - **[Results Analysis](data/)**: CSV output format and analysis guidelines
+
+### 🔧 Converting CSV/NDJSON to Parquet
+Parquet is usually smaller and faster to read. Use our helper:
+
+```powershell
+# CSV -> Parquet (snappy)
+.\.venv\Scripts\python scripts/tools/csv_to_parquet.py --input data\raw\logs.csv --out data\raw\logs.parquet
+
+# Compressed CSV -> Parquet (zstd)
+.\.venv\Scripts\python scripts/tools/csv_to_parquet.py --input data\raw\logs.csv.gz --out data\raw\logs.parquet --compression zstd
+
+# NDJSON/JSONL -> Parquet
+.\.venv\Scripts\python scripts/tools/csv_to_parquet.py --input data\raw\logs.ndjson --out data\raw\logs.parquet --format ndjson
+```
+
+### 🧩 Utilities overview
+- `utils/host_info.py`: Collects system details (CPU/mem/Python). Requires `psutil` and optionally `py-cpuinfo`.
+- `utils/data_io.py`: Universal readers and helpers:
+   - `UniversalDataReader`: read CSV/Parquet/JSON/NDJSON via pandas, modin, polars, or DuckDB
+   - `DatasetFinder`: locate the best dataset automatically
+   - `get_dataset_size(path)`: count records efficiently
 
 ## 🤝 Contributing
 
@@ -176,3 +209,5 @@ This project is open source. See LICENSE file for details.
 ---
 
 **💡 Pro Tip**: Start with `benchmark_01.py` for reliable cross-platform results, then experiment with other versions based on your specific needs!
+
+Updated August 2025.

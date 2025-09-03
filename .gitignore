@@ -211,3 +211,4 @@ data/raw/*.csv
 data/processed/*.csv
 data/raw/*.*son
 data/processed/*.*son
+data/raw/*10M.parquet

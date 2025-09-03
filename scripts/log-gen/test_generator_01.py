@@ -84,12 +84,12 @@ def generate_logs(n=1_000_000):
     }
     
     df = pd.DataFrame(data)
-    df.to_csv("data/synthetic_logs_test.csv", index=False)
+    df.to_csv("data/synthetic_logs_8M.csv", index=False)
     print(f"Generated {n} realistic synthetic logs with {len(data)} columns.")
     return df
 
 if __name__ == "__main__":
-    df = generate_logs(n=10_000_000)
+    df = generate_logs(n=8_000_000)
     print(f"Dataset shape: {df.shape}")
     print(f"Memory usage: {df.memory_usage(deep=True).sum() / 1024**2:.1f} MB")
     del df  # Clean up to free memory

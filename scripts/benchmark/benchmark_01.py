@@ -11,6 +11,10 @@ from typing import Optional, Callable, Any, Union, List, TypeVar, cast
 import pandas
 import modin.pandas
 import polars
+import gzip
+import json
+import zipfile
+from pathlib import Path
 
 # Define specialized DataFrame types for type checking
 PandasDataFrame = pandas.DataFrame
@@ -80,6 +84,22 @@ RESULTS_CSV_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 # Modin engine configuration - defer to avoid potential import issues
 DEFAULT_MODIN_ENGINE = "dask"  # Safe default, will be set properly in setup_modin()
+
+def get_dataset_size(csv_path: str) -> int:
+    """
+    Get the number of records in the dataset by reading the CSV file.
+    Args:
+        csv_path (str): Path to the CSV file.
+    Returns:
+        int: Number of records in the dataset.
+    """
+    try:
+        # Use pandas to count rows efficiently
+        df = pd.read_csv(csv_path)
+        return len(df)
+    except Exception as e:
+        print(f"Warning: Could not determine dataset size: {e}")
+        return 0
 
 def setup_modin() -> None:
     """Initialize Modin with environment-appropriate configuration.
@@ -806,13 +826,14 @@ def run_all_benchmarks(csv_path: str, repeat: int = 1) -> dict:
             results[library_name] = library_results
     return results
 
-def save_results_to_csv(results: dict, host_info: dict, script_name: str) -> None:
+def save_results_to_csv(results: dict, host_info: dict, script_name: str, dataset_size: int) -> None:
     """
     Save benchmark results to CSV file.
     Args:
         results (dict): Benchmark results.
         host_info (dict): Host system information.
         script_name (str): Name of the script creating the record.
+        dataset_size (int): Number of records in the dataset.
     """
     row_data = host_info.copy()
     operations = ["filter_group", "statistics", "complex_join", "timeseries"]
@@ -829,8 +850,9 @@ def save_results_to_csv(results: dict, host_info: dict, script_name: str) -> Non
                 value = "N/A"
             row_data[key] = value
     
-    # Add script_name to row_data
+    # Add script_name and dataset_size to row_data
     row_data["script_name"] = script_name
+    row_data["dataset_size"] = dataset_size
     
     file_exists = os.path.exists(RESULTS_CSV_PATH)
     with open(RESULTS_CSV_PATH, 'a', newline='', encoding='utf-8') as csvfile:  # Added UTF-8 encoding
@@ -863,10 +885,15 @@ def main():
     print(f"\nStarting comprehensive benchmark with {args.csv}")
     print("This will test 4 different operations across all available libraries...")
     log_memory_usage("Initial memory usage")
+    
+    # Get dataset size
+    dataset_size = get_dataset_size(args.csv)
+    print(f"Dataset size: {dataset_size:,} records")
+    
     results = run_all_benchmarks(args.csv, args.repeat)
     log_memory_usage("Final memory usage")
     script_name = "benchmark_01.py"  # Or use __file__.split('/')[-1]
-    save_results_to_csv(results, host_info, script_name)
+    save_results_to_csv(results, host_info, script_name, dataset_size)
     
     # Cleanup Ray if it was initialized
     if DEFAULT_MODIN_ENGINE == "ray" and RAY_AVAILABLE:

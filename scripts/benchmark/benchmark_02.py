@@ -10,6 +10,11 @@ import warnings
 import sys
 import os
 import csv
+import gzip
+import json
+import zipfile
+import argparse
+from typing import Union, Any
 from contextlib import redirect_stderr, redirect_stdout
 from typing import cast
 from pathlib import Path
@@ -20,15 +25,127 @@ sys.path.insert(0, project_root)
 
 # Import our utility modules (fixed import path)
 from utils.host_info import get_host_info
+from utils.config import setup_project
+
+# File format detection and universal reading functions
+def detect_file_format(file_path: Path) -> str:
+    """Detect the file format based on extension and content."""
+    suffixes = file_path.suffixes
+    
+    # Handle compressed files
+    if '.gz' in suffixes or '.zip' in suffixes or '.zst' in suffixes:
+        # Get the format before compression
+        clean_suffixes = [s for s in suffixes if s not in ['.gz', '.zip', '.zst']]
+        if clean_suffixes:
+            format_ext = clean_suffixes[-1]
+        else:
+            format_ext = '.csv'  # Default assumption
+    else:
+        format_ext = file_path.suffix
+    
+    format_map = {
+        '.csv': 'csv',
+        '.parquet': 'parquet', 
+        '.json': 'json',
+        '.jsonl': 'ndjson',
+        '.ndjson': 'ndjson'
+    }
+    
+    return format_map.get(format_ext.lower(), 'csv')
+
+def read_file_universal(file_path: Path, library: str = 'pandas', **kwargs) -> Union[pd.DataFrame, pl.DataFrame, Any]:
+    """Universal file reader that handles multiple formats and libraries."""
+    file_format = detect_file_format(file_path)
+    
+    # Handle compressed files
+    if any(ext in file_path.suffixes for ext in ['.gz', '.zip', '.zst']):
+        if '.gz' in file_path.suffixes:
+            if library == 'pandas':
+                if file_format == 'csv':
+                    return pd.read_csv(file_path, compression='gzip', **kwargs)
+                elif file_format == 'json':
+                    with gzip.open(file_path, 'rt') as f:
+                        data = [json.loads(line) for line in f]
+                    return pd.DataFrame(data)
+            elif library == 'polars':
+                if file_format == 'csv':
+                    return pl.read_csv(file_path, **kwargs)
+                elif file_format == 'json':
+                    return pl.read_ndjson(file_path)
+        # Add other compression handling as needed
+    
+    # Standard file reading
+    if library == 'pandas':
+        if file_format == 'csv':
+            return pd.read_csv(file_path, **kwargs)
+        elif file_format == 'parquet':
+            return pd.read_parquet(file_path, **kwargs)
+        elif file_format == 'json':
+            return pd.read_json(file_path, **kwargs)
+        elif file_format == 'ndjson':
+            return pd.read_json(file_path, lines=True, **kwargs)
+    elif library == 'polars':
+        if file_format == 'csv':
+            return pl.read_csv(file_path, **kwargs)
+        elif file_format == 'parquet':
+            return pl.read_parquet(file_path, **kwargs) 
+        elif file_format == 'json':
+            return pl.read_json(file_path, **kwargs)
+        elif file_format == 'ndjson':
+            return pl.read_ndjson(file_path, **kwargs)
+    elif library == 'modin':
+        if file_format == 'csv':
+            return mpd.read_csv(file_path, **kwargs)
+        elif file_format == 'parquet':
+            return mpd.read_parquet(file_path, **kwargs)
+        elif file_format == 'json':
+            return mpd.read_json(file_path, **kwargs)
+        elif file_format == 'ndjson':
+            return mpd.read_json(file_path, lines=True, **kwargs)
+    
+    # Fallback to pandas CSV
+    return pd.read_csv(file_path, **kwargs)
 
 # Use pathlib for cross-platform paths
 PROJECT_ROOT = Path(__file__).parent.parent.parent  # Adjust based on script location
-CSV_PATH = PROJECT_ROOT / "data" / "raw" / "synthetic_logs_test.csv"
-RESULTS_CSV_PATH = PROJECT_ROOT / "data" / "benchmark_results.csv"
 
-# Ensure directories exist
-CSV_PATH.parent.mkdir(parents=True, exist_ok=True)
-RESULTS_CSV_PATH.parent.mkdir(parents=True, exist_ok=True)
+# Auto-detect the best available dataset file
+def find_dataset_file() -> Path:
+    """Find the best available dataset file in order of preference."""
+    data_dir = PROJECT_ROOT / "data" / "raw"
+    
+    # Preference order: Parquet > CSV > NDJSON > JSON > Compressed variants
+    candidates = [
+        "synthetic_logs_7M.parquet",
+        "synthetic_logs_7M.csv", 
+        "synthetic_logs_10M.parquet",
+        "synthetic_logs_10M.csv",
+        "synthetic_logs_test.csv",
+        "synthetic_logs.parquet",
+        "synthetic_logs.csv",
+        "synthetic_logs.ndjson",
+        "synthetic_logs.jsonl",
+        "logs.parquet",
+        "logs.csv",
+        "logs.ndjson",
+        "logs.jsonl",
+        # Compressed variants
+        "synthetic_logs_7M.csv.gz",
+        "synthetic_logs_10M.csv.gz",
+        "synthetic_logs.csv.gz",
+        "logs.csv.gz",
+    ]
+    
+    for filename in candidates:
+        filepath = data_dir / filename
+        if filepath.exists():
+            print(f"Using dataset: {filepath}")
+            return filepath
+    
+    # Fallback to the original expectation
+    fallback = data_dir / "synthetic_logs_7M.parquet"
+    print(f"No dataset found, expecting: {fallback}")
+    return fallback
 
 # Modin configuration with fallbacks
 try:
@@ -51,6 +168,22 @@ if platform.system() in ['Linux', 'Darwin']:
         FIREDUCKS_AVAILABLE = True
     except ImportError:
         pass
+
+def get_dataset_size(file_path: Path) -> int:
+    """
+    Get the number of records in the dataset by reading the file.
+    Args:
+        file_path (Path): Path to the dataset file.
+    Returns:
+        int: Number of records in the dataset.
+    """
+    try:
+        # Use pandas to count rows efficiently
+        df = read_file_universal(file_path, library='pandas')
+        return len(df)
+    except Exception as e:
+        print(f"Warning: Could not determine dataset size: {e}")
+        return 0
 
 def setup_modin():
     """Initialize Modin with proper Dask configuration and minimal logging"""
@@ -79,13 +212,14 @@ def setup_modin():
     except Exception as e:
         print(f"Warning: Modin setup failed: {e}")
 
-def save_results_to_csv(results: dict, host_info: dict, script_name: str) -> None:
+def save_results_to_csv(results: dict, host_info: dict, script_name: str, dataset_size: int) -> None:
     """
     Save benchmark results to CSV file with error handling.
     Args:
         results (dict): Benchmark results.
         host_info (dict): Host system information.
         script_name (str): Name of the script creating the record.
+        dataset_size (int): Number of records in the dataset.
     """
     try:
         file_exists = RESULTS_CSV_PATH.exists()
@@ -97,6 +231,7 @@ def save_results_to_csv(results: dict, host_info: dict, script_name: str) -> Non
                     "cpu_count_logical", "cpu_count_physical", "cpu_freq_max", "cpu_freq_current",
                     "memory_total_gb", "memory_available_gb", "python_version", "python_implementation",
                     "cpu_brand", "cpu_arch",  # Host info ends here
+                    "dataset_size",  # Number of records in the dataset
                     "filter_group_pandas_seconds", "filter_group_modin_seconds", "filter_group_polars_seconds",
                     "filter_group_duckdb_seconds", "filter_group_fireducks_seconds",
                     "statistics_pandas_seconds", "statistics_modin_seconds", "statistics_polars_seconds",
@@ -122,6 +257,7 @@ def save_results_to_csv(results: dict, host_info: dict, script_name: str) -> Non
                 host_info.get("memory_available_gb"), host_info.get("python_version"),
                 host_info.get("python_implementation"), host_info.get("cpu_brand"),
                 host_info.get("cpu_arch"),  # Host info ends here
+                dataset_size,  # Dataset size
                 # Timing columns (fixed order: operation first, then library)
                 safe_value(results.get("filter_group", {}).get("pandas")),
                 safe_value(results.get("filter_group", {}).get("modin")),
@@ -152,37 +288,52 @@ def save_results_to_csv(results: dict, host_info: dict, script_name: str) -> Non
 
 # Operation 1: Filter and Group (Original)
 def pandas_filter_group():
-    df = pd.read_csv(CSV_PATH)
+    df = cast(pd.DataFrame, read_file_universal(DATASET_PATH, library='pandas'))
     return df[df["status_code"] == 200].groupby("source_ip").agg({"bytes": "sum"})
 
 def modin_filter_group():
-    df = mpd.read_csv(CSV_PATH)
+    df = read_file_universal(DATASET_PATH, library='modin')
     return df[df["status_code"] == 200].groupby("source_ip").agg({"bytes": "sum"})
 
 def polars_filter_group():
-    df = pl.read_csv(CSV_PATH)
+    df = cast(pl.DataFrame, read_file_universal(DATASET_PATH, library='polars'))
     return (df.filter(pl.col("status_code") == 200)
              .group_by("source_ip")
              .agg(pl.sum("bytes")))
 
 def duckdb_filter_group():
     conn = duckdb.connect()
-    return conn.execute(f"""
-        SELECT source_ip, SUM(bytes) as bytes
-        FROM read_csv_auto('{CSV_PATH}')
-        WHERE status_code = 200
-        GROUP BY source_ip
-    """).fetchdf()
+    
+    # DuckDB can read various formats - we'll use the automatic detection
+    file_format = detect_file_format(DATASET_PATH)
+    
+    if file_format == 'parquet':
+        result = conn.execute(f"""
+            SELECT source_ip, SUM(bytes) as bytes
+            FROM read_parquet('{DATASET_PATH}')
+            WHERE status_code = 200
+            GROUP BY source_ip
+        """).fetchdf()
+    else:
+        result = conn.execute(f"""
+            SELECT source_ip, SUM(bytes) as bytes
+            FROM read_csv_auto('{DATASET_PATH}')
+            WHERE status_code = 200
+            GROUP BY source_ip
+        """).fetchdf()
+    
+    conn.close()
+    return result
 
 def fireducks_filter_group():
     if not FIREDUCKS_AVAILABLE:
         return None
-    df = fpd.read_csv(CSV_PATH)
+    df = cast(pd.DataFrame, read_file_universal(DATASET_PATH, library='pandas'))  # Use pandas fallback for FireDucks
     return df[df["status_code"] == 200].groupby("source_ip").agg({"bytes": "sum"})
 
 # Operation 2: Statistical Analysis
 def pandas_stats():
-    df = pd.read_csv(CSV_PATH)
+    df = cast(pd.DataFrame, read_file_universal(DATASET_PATH, library='pandas'))
     return df.groupby("event_type").agg({
         "bytes": ["mean", "std", "min", "max"],
         "response_time_ms": ["mean", "median"],
@@ -192,7 +343,9 @@ def pandas_stats():
 def modin_stats():
     # Read only needed columns; let Modin infer dtypes to avoid int64/float64 conflicts
     usecols = ["event_type", "bytes", "response_time_ms", "risk_score"]
-    df = cast(pd.DataFrame, mpd.read_csv(CSV_PATH, usecols=usecols, low_memory=False))
+    df = read_file_universal(DATASET_PATH, library='modin')
+    # Select only needed columns after reading, since Modin doesn't support usecols
+    df = df[usecols]
 
     # Ensure numeric columns are float64 for aggregations that yield floats
     import pandas as _pd
@@ -252,7 +405,7 @@ def modin_stats():
     return result
 
 def polars_stats():
-    df = pl.read_csv(CSV_PATH)
+    df = cast(pl.DataFrame, read_file_universal(DATASET_PATH, library='polars'))
     return (df.group_by("event_type")
              .agg([
                  pl.col("bytes").mean().alias("bytes_mean"),
@@ -267,24 +420,45 @@ def polars_stats():
 
 def duckdb_stats():
     conn = duckdb.connect()
-    return conn.execute(f"""
-        SELECT event_type,
-               AVG(bytes) as bytes_mean,
-               STDDEV(bytes) as bytes_std,
-               MIN(bytes) as bytes_min,
-               MAX(bytes) as bytes_max,
-               AVG(response_time_ms) as response_time_ms_mean,
-               MEDIAN(response_time_ms) as response_time_ms_median,
-               AVG(risk_score) as risk_score_mean,
-               STDDEV(risk_score) as risk_score_std
-        FROM read_csv_auto('{CSV_PATH}')
-        GROUP BY event_type
-    """).fetchdf()
+    
+    file_format = detect_file_format(DATASET_PATH)
+    
+    if file_format == 'parquet':
+        result = conn.execute(f"""
+            SELECT event_type,
+                   AVG(bytes) as bytes_mean,
+                   STDDEV(bytes) as bytes_std,
+                   MIN(bytes) as bytes_min,
+                   MAX(bytes) as bytes_max,
+                   AVG(response_time_ms) as response_time_ms_mean,
+                   MEDIAN(response_time_ms) as response_time_ms_median,
+                   AVG(risk_score) as risk_score_mean,
+                   STDDEV(risk_score) as risk_score_std
+            FROM read_parquet('{DATASET_PATH}')
+            GROUP BY event_type
+        """).fetchdf()
+    else:
+        result = conn.execute(f"""
+            SELECT event_type,
+                   AVG(bytes) as bytes_mean,
+                   STDDEV(bytes) as bytes_std,
+                   MIN(bytes) as bytes_min,
+                   MAX(bytes) as bytes_max,
+                   AVG(response_time_ms) as response_time_ms_mean,
+                   MEDIAN(response_time_ms) as response_time_ms_median,
+                   AVG(risk_score) as risk_score_mean,
+                   STDDEV(risk_score) as risk_score_std
+            FROM read_csv_auto('{DATASET_PATH}')
+            GROUP BY event_type
+        """).fetchdf()
+    
+    conn.close()
+    return result
 
 def fireducks_stats():
     if not FIREDUCKS_AVAILABLE:
         return None
-    df = fpd.read_csv(CSV_PATH)
+    df = cast(pd.DataFrame, read_file_universal(DATASET_PATH, library='pandas'))  # Use pandas fallback
     return df.groupby("event_type").agg({
         "bytes": ["mean", "std", "min", "max"],
         "response_time_ms": ["mean", "median"],
@@ -293,7 +467,7 @@ def fireducks_stats():
 
 # Operation 3: Complex Join and Window Functions
 def pandas_complex():
-    df = pd.read_csv(CSV_PATH)
+    df = cast(pd.DataFrame, read_file_universal(DATASET_PATH, library='pandas'))
     # Create a summary table and join back
     summary = df.groupby("source_ip").agg({"bytes": "sum", "response_time_ms": "mean", "risk_score": "mean"}).reset_index()
     summary.columns = ["source_ip", "total_bytes", "avg_response_time_ms", "avg_risk_score"]
@@ -303,15 +477,26 @@ def pandas_complex():
     return result[result["bytes_rank"] <= 10]  # Top 10 by bytes per event_type
 
 def modin_complex():
-    df = mpd.read_csv(CSV_PATH)
-    summary = df.groupby("source_ip").agg({"bytes": "sum", "response_time_ms": "mean", "risk_score": "mean"}).reset_index()
-    summary.columns = ["source_ip", "total_bytes", "avg_response_time_ms", "avg_risk_score"]
-    result = df.merge(summary, on="source_ip")
-    result["bytes_rank"] = result.groupby("event_type")["bytes"].rank(method="dense", ascending=False)
-    return result[result["bytes_rank"] <= 10]
+    try:
+        df = read_file_universal(DATASET_PATH, library='modin')
+        # Compute per-key counts (small table) to avoid heavy ranking
+        summary = (
+            df.groupby("source_ip").agg({"bytes": "count"}).reset_index().rename(columns={"bytes": "metric_count"})
+        )
+        # Pull top keys (small) to avoid large shuffle/rank
+        try:
+            top_keys = summary.nlargest(10, "metric_count")["source_ip"].unique()
+        except Exception:
+            top_keys = summary.sort_values("metric_count", ascending=False)["source_ip"].head(10).unique()
+        # Filter original df to those keys
+        result = df[df["source_ip"].isin(list(top_keys))]
+        return result
+    except Exception as e:
+        print(f"Warning: Modin complex_join failed: {e}")
+        raise
 
 def polars_complex():
-    df = pl.read_csv(CSV_PATH)
+    df = cast(pl.DataFrame, read_file_universal(DATASET_PATH, library='polars'))
     summary = (df.group_by("source_ip")
                 .agg([pl.col("bytes").sum().alias("total_bytes"),
                       pl.col("response_time_ms").mean().alias("avg_response_time_ms"),
@@ -324,28 +509,53 @@ def polars_complex():
 
 def duckdb_complex():
     conn = duckdb.connect()
-    return conn.execute(f"""
-        WITH summary AS (
-            SELECT source_ip,
-                   SUM(bytes) as total_bytes,
-                   AVG(response_time_ms) as avg_response_time_ms,
-                   AVG(risk_score) as avg_risk_score
-            FROM read_csv_auto('{CSV_PATH}')
-            GROUP BY source_ip
-        ),
-        ranked AS (
-            SELECT d.*, s.total_bytes, s.avg_response_time_ms, s.avg_risk_score,
-                   DENSE_RANK() OVER (PARTITION BY d.event_type ORDER BY d.bytes DESC) as bytes_rank
-            FROM read_csv_auto('{CSV_PATH}') d
-            JOIN summary s ON d.source_ip = s.source_ip
-        )
-        SELECT * FROM ranked WHERE bytes_rank <= 10
-    """).fetchdf()
+    
+    file_format = detect_file_format(DATASET_PATH)
+    
+    if file_format == 'parquet':
+        result = conn.execute(f"""
+            WITH summary AS (
+                SELECT source_ip,
+                       SUM(bytes) as total_bytes,
+                       AVG(response_time_ms) as avg_response_time_ms,
+                       AVG(risk_score) as avg_risk_score
+                FROM read_parquet('{DATASET_PATH}')
+                GROUP BY source_ip
+            ),
+            ranked AS (
+                SELECT d.*, s.total_bytes, s.avg_response_time_ms, s.avg_risk_score,
+                       DENSE_RANK() OVER (PARTITION BY d.event_type ORDER BY d.bytes DESC) as bytes_rank
+                FROM read_parquet('{DATASET_PATH}') d
+                JOIN summary s ON d.source_ip = s.source_ip
+            )
+            SELECT * FROM ranked WHERE bytes_rank <= 10
+        """).fetchdf()
+    else:
+        result = conn.execute(f"""
+            WITH summary AS (
+                SELECT source_ip,
+                       SUM(bytes) as total_bytes,
+                       AVG(response_time_ms) as avg_response_time_ms,
+                       AVG(risk_score) as avg_risk_score
+                FROM read_csv_auto('{DATASET_PATH}')
+                GROUP BY source_ip
+            ),
+            ranked AS (
+                SELECT d.*, s.total_bytes, s.avg_response_time_ms, s.avg_risk_score,
+                       DENSE_RANK() OVER (PARTITION BY d.event_type ORDER BY d.bytes DESC) as bytes_rank
+                FROM read_csv_auto('{DATASET_PATH}') d
+                JOIN summary s ON d.source_ip = s.source_ip
+            )
+            SELECT * FROM ranked WHERE bytes_rank <= 10
+        """).fetchdf()
+    
+    conn.close()
+    return result
 
 def fireducks_complex():
     if not FIREDUCKS_AVAILABLE:
         return None
-    df = fpd.read_csv(CSV_PATH)
+    df = cast(pd.DataFrame, read_file_universal(DATASET_PATH, library='pandas'))  # Use pandas fallback
     summary = df.groupby("source_ip").agg({"bytes": "sum", "response_time_ms": "mean", "risk_score": "mean"}).reset_index()
     summary.columns = ["source_ip", "total_bytes", "avg_response_time_ms", "avg_risk_score"]
     result = df.merge(summary, on="source_ip")
@@ -354,7 +564,7 @@ def fireducks_complex():
 
 # Operation 4: Time Series Analysis (if timestamp column exists)
 def pandas_timeseries():
-    df = pd.read_csv(CSV_PATH)
+    df = cast(pd.DataFrame, read_file_universal(DATASET_PATH, library='pandas'))
     if 'timestamp' in df.columns:
         df['timestamp'] = pd.to_datetime(df['timestamp'])
         df['hour'] = df['timestamp'].dt.hour
@@ -368,9 +578,9 @@ def pandas_timeseries():
         return df.groupby(['status_code', 'event_type']).size().reset_index(name='count')
 
 def modin_timeseries():
-    df = mpd.read_csv(CSV_PATH)
+    df = read_file_universal(DATASET_PATH, library='modin')
     if 'timestamp' in df.columns:
-        df['timestamp'] = mpd.to_datetime(df['timestamp'])
+        df['timestamp'] = pd.to_datetime(df['timestamp'])  # Use pandas for datetime conversion
         df['hour'] = df['timestamp'].dt.hour
         return df.groupby(['hour', 'event_type']).agg({
             'bytes': ['sum', 'count'],
@@ -381,7 +591,7 @@ def modin_timeseries():
         return df.groupby(['status_code', 'event_type']).size().reset_index(name='count')
 
 def polars_timeseries():
-    df = pl.read_csv(CSV_PATH)
+    df = cast(pl.DataFrame, read_file_universal(DATASET_PATH, library='polars'))
     if 'timestamp' in df.columns:
         df = df.with_columns([
             pl.col('timestamp').str.strptime(pl.Datetime).alias('timestamp_parsed'),
@@ -399,32 +609,58 @@ def polars_timeseries():
 
 def duckdb_timeseries():
     conn = duckdb.connect()
+    
+    file_format = detect_file_format(DATASET_PATH)
+    
     # First check if timestamp column exists
     try:
-        result = conn.execute(f"""
-            SELECT EXTRACT(hour FROM CAST(timestamp AS TIMESTAMP)) as hour,
-                   event_type,
-                   SUM(bytes) as bytes_sum,
-                   COUNT(bytes) as bytes_count,
-                   AVG(response_time_ms) as response_time_ms_mean,
-                   AVG(risk_score) as risk_score_mean
-            FROM read_csv_auto('{CSV_PATH}')
-            GROUP BY hour, event_type
-            ORDER BY hour, event_type
-        """).fetchdf()
+        if file_format == 'parquet':
+            result = conn.execute(f"""
+                SELECT EXTRACT(hour FROM CAST(timestamp AS TIMESTAMP)) as hour,
+                       event_type,
+                       SUM(bytes) as bytes_sum,
+                       COUNT(bytes) as bytes_count,
+                       AVG(response_time_ms) as response_time_ms_mean,
+                       AVG(risk_score) as risk_score_mean
+                FROM read_parquet('{DATASET_PATH}')
+                GROUP BY hour, event_type
+                ORDER BY hour, event_type
+            """).fetchdf()
+        else:
+            result = conn.execute(f"""
+                SELECT EXTRACT(hour FROM CAST(timestamp AS TIMESTAMP)) as hour,
+                       event_type,
+                       SUM(bytes) as bytes_sum,
+                       COUNT(bytes) as bytes_count,
+                       AVG(response_time_ms) as response_time_ms_mean,
+                       AVG(risk_score) as risk_score_mean
+                FROM read_csv_auto('{DATASET_PATH}')
+                GROUP BY hour, event_type
+                ORDER BY hour, event_type
+            """).fetchdf()
         return result
     except:
         # Fallback if no timestamp column
-        return conn.execute(f"""
-            SELECT status_code, event_type, COUNT(*) as count
-            FROM read_csv_auto('{CSV_PATH}')
-            GROUP BY status_code, event_type
-        """).fetchdf()
+        if file_format == 'parquet':
+            fallback_result = conn.execute(f"""
+                SELECT status_code, event_type, COUNT(*) as count
+                FROM read_parquet('{DATASET_PATH}')
+                GROUP BY status_code, event_type
+            """).fetchdf()
+        else:
+            fallback_result = conn.execute(f"""
+                SELECT status_code, event_type, COUNT(*) as count
+                FROM read_csv_auto('{DATASET_PATH}')
+                GROUP BY status_code, event_type
+            """).fetchdf()
+        return fallback_result
+    finally:
+        conn.close()
 
 def fireducks_timeseries():
     if not FIREDUCKS_AVAILABLE:
         return None
-    df = fpd.read_csv(CSV_PATH)
+    df = cast(pd.DataFrame, read_file_universal(DATASET_PATH, library='pandas'))  # Use pandas fallback
     if 'timestamp' in df.columns:
         df['timestamp'] = pd.to_datetime(df['timestamp'])  # FireDucks uses pandas datetime
         df['hour'] = df['timestamp'].dt.hour
@@ -529,6 +765,31 @@ if __name__ == "__main__":
         print("COMPREHENSIVE DATA PROCESSING BENCHMARK")
         print("="*60)
 
+        # Optional CLI/env dataset override
+        parser = argparse.ArgumentParser(add_help=False)
+        parser.add_argument("-d", "--dataset", type=str, help="Path to the dataset file to benchmark")
+        parser.add_argument("-o", "--output", type=str, help="Output CSV file path for results")
+        args, _ = parser.parse_known_args()
+        dataset_env = os.environ.get("BENCHMARK_DATASET")
+        chosen = args.dataset or dataset_env
+        DATASET_PATH = None
+        if chosen:
+            DATASET_PATH = Path(chosen)
+        if DATASET_PATH is None:
+            DATASET_PATH = find_dataset_file()
+        if DATASET_PATH is None or not DATASET_PATH.exists():
+            raise RuntimeError("No dataset found. Use -d/--dataset or set BENCHMARK_DATASET.")
+
+        # Determine output path
+        config = setup_project()
+        RESULTS_CSV_PATH = config.benchmark_results_file
+        if args.output:
+            RESULTS_CSV_PATH = Path(args.output)
+
+        # Ensure directories exist
+        DATASET_PATH.parent.mkdir(parents=True, exist_ok=True)
+        RESULTS_CSV_PATH.parent.mkdir(parents=True, exist_ok=True)
+
         # Setup
         setup_modin()
         pd.set_option('display.float_format', '{:.0f}'.format)
@@ -541,8 +802,12 @@ if __name__ == "__main__":
         print(f"Memory: {host_info.get('memory_total_gb', 'N/A')} GB total")
 
         # Run all benchmarks
-        print(f"\nStarting comprehensive benchmark with {CSV_PATH}")
+        print(f"\nStarting comprehensive benchmark with {DATASET_PATH}")
         print("This will test 4 different operations across 5 libraries...")
+        
+        # Get dataset size
+        dataset_size = get_dataset_size(DATASET_PATH)
+        print(f"Dataset size: {dataset_size:,} records")
 
         results = run_all_benchmarks()
 
@@ -550,7 +815,7 @@ if __name__ == "__main__":
         print(f"\n{'='*50}")
         print("SAVING RESULTS")
         print(f"{'='*50}")
-        save_results_to_csv(results, host_info, script_name)
+        save_results_to_csv(results, host_info, script_name, dataset_size)
 
         # Print summary
         print(f"\n{'='*50}")
