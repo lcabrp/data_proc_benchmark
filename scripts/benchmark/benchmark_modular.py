@@ -7,9 +7,16 @@ the DRY principle and can be easily adapted for other projects.
 
 import sys
 import time
+import gc
+import os
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Union
 from contextlib import redirect_stderr, redirect_stdout
+import argparse
+
+import warnings
+import psutil
+warnings.filterwarnings("ignore", category=SyntaxWarning, message=r"invalid escape sequence \\_")
 
 # Add project root to Python path so we can import utils modules
 PROJECT_ROOT = Path(__file__).parent.parent.parent
@@ -53,22 +60,34 @@ class ModularBenchmark:
     - Customizing the output format
     """
     
-    def __init__(self, config=None):
-        """Initialize the benchmark with configuration."""
+    def __init__(self, config=None, dataset_path: Optional[Union[str, Path]] = None):
+        """Initialize the benchmark with configuration.
+
+        Args:
+            config: Optional pre-built project config.
+            dataset_path: Optional explicit dataset path override (CLI -d/--dataset).
+        """
         self.config = config or setup_project()
         self.data_reader = UniversalDataReader(default_library='pandas')
         self.dataset_finder = DatasetFinder(
             search_dirs=self.config.get_dataset_search_dirs(),
             file_patterns=self.config.dataset_patterns
         )
-        
-        # Find the best dataset
-        dataset_path = self.dataset_finder.find_dataset(self.config.project_root)
-        if not dataset_path:
+
+        # Resolve dataset path: explicit override > auto-detect
+        resolved: Optional[Path]
+        if dataset_path:
+            resolved = Path(dataset_path)
+            if not resolved.exists():
+                print(f"Warning: specified dataset {resolved} not found; falling back to auto-detect")
+                resolved = None
+        else:
+            resolved = None
+        if resolved is None:
+            resolved = self.dataset_finder.find_dataset(self.config.project_root)
+        if not resolved:
             raise FileNotFoundError("No suitable dataset found!")
-        
-        # Type assertion to help type checker
-        self.dataset_path: Path = dataset_path
+        self.dataset_path = resolved
         print(f"Using dataset: {self.dataset_path}")
         
         # Get dataset size after confirming path is valid
@@ -127,23 +146,43 @@ class ModularBenchmark:
             }
         
         try:
-            start_time = time.time()
+            proc = psutil.Process(os.getpid())
+            rss_before = proc.memory_info().rss
+            start_time = time.perf_counter()
             result = operation_func()
-            end_time = time.time()
-            
-            execution_time = end_time - start_time
-            
-            # Get result shape if possible
+            # Capture shape then aggressively free intermediates inside operation by copying small head if large
             result_shape = None
-            if hasattr(result, 'shape'):
-                result_shape = result.shape
-            elif hasattr(result, '__len__'):
-                result_shape = (len(result),)
-            
+            small_result = None
+            try:
+                if hasattr(result, 'shape'):
+                    result_shape = result.shape  # type: ignore[attr-defined]
+                    # If result seems large (many rows) keep only first 10 rows to reduce retained memory
+                    if hasattr(result, 'head') and result_shape and result_shape[0] and result_shape[0] > 1000:
+                        try:
+                            small_result = result.head(10)  # type: ignore[call-arg]
+                        except Exception:
+                            small_result = None
+                elif hasattr(result, '__len__'):
+                    result_shape = (len(result),)
+            except Exception:
+                pass
+            # Drop original large result if we created a trimmed version
+            if small_result is not None:
+                try:
+                    del result
+                except Exception:
+                    pass
+                result = small_result
+            end_time = time.perf_counter()
+            execution_time = end_time - start_time
+            rss_after = proc.memory_info().rss
+            delta_mb = (rss_after - rss_before) / (1024**2)
+            # Force GC to return memory sooner
+            gc.collect()
             return {
                 'status': 'success',
                 'execution_time': execution_time,
-                'memory_usage': None,  # Simplified for now
+                'memory_usage': round(delta_mb, 2),
                 'result_shape': result_shape,
                 'reason': None
             }
@@ -278,58 +317,46 @@ class ModularBenchmark:
     # Complex join/window operations
     # -------------------------------------------------
     def complex_join_pandas(self):
-        df = self.data_reader.read_file(self.dataset_path, library='pandas')
-        summary = (
-            df.groupby("source_ip").agg({
-                "bytes": "sum",
-                "response_time_ms": "mean",
-                "risk_score": "mean"
-            }).reset_index()
-        )
-        summary.columns = [
-            "source_ip", "total_bytes", "avg_response_time_ms", "avg_risk_score"
-        ]
-        result = df.merge(summary, on="source_ip")
-        result["bytes_rank"] = result.groupby("event_type")["bytes"].rank(
-            method="dense", ascending=False
-        )
-        return result[result["bytes_rank"] <= 10]
+            df = self.data_reader.read_file(self.dataset_path, library='pandas')
+            g = df.groupby('source_ip')
+            df['total_bytes'] = g['bytes'].transform('sum')
+            df['avg_response_time_ms'] = g['response_time_ms'].transform('mean')
+            df['avg_risk_score'] = g['risk_score'].transform('mean')
+            df['bytes_rank'] = df.groupby('event_type')['bytes'].rank(method='dense', ascending=False)
+            top10 = df[df['bytes_rank'] <= 10].copy()
+            del df
+            gc.collect()
+            return top10
 
     def complex_join_polars(self):
         if not POLARS_AVAILABLE or pl is None:
             raise RuntimeError("Polars not available")
-        df = self.data_reader.read_file(self.dataset_path, library='polars')
-        summary = (
-            df.group_by("source_ip").agg([
-                pl.col("bytes").sum().alias("total_bytes"),
-                pl.col("response_time_ms").mean().alias("avg_response_time_ms"),
-                pl.col("risk_score").mean().alias("avg_risk_score"),
+        path = str(self.dataset_path)
+        scan = pl.scan_parquet(path) if path.lower().endswith('.parquet') else pl.scan_csv(path)
+        result = (
+            scan.with_columns([
+                pl.col('bytes').sum().over('source_ip').alias('total_bytes'),
+                pl.col('response_time_ms').mean().over('source_ip').alias('avg_response_time_ms'),
+                pl.col('risk_score').mean().over('source_ip').alias('avg_risk_score'),
+                pl.col('bytes').rank(method='dense', descending=True).over('event_type').alias('bytes_rank')
             ])
+            .filter(pl.col('bytes_rank') <= 10)
+            .collect()
         )
-        result = df.join(summary, on="source_ip")
-        result = result.with_columns([
-            pl.col("bytes").rank(method="dense", descending=True)
-            .over("event_type").alias("bytes_rank")
-        ])
-        return result.filter(pl.col("bytes_rank") <= 10)
+        gc.collect()
+        return result
 
     def complex_join_modin(self):
-        df = self.data_reader.read_file(self.dataset_path, library='modin')
-        summary = (
-            df.groupby("source_ip").agg({
-                "bytes": "sum",
-                "response_time_ms": "mean",
-                "risk_score": "mean"
-            }).reset_index()
-        )
-        summary.columns = [
-            "source_ip", "total_bytes", "avg_response_time_ms", "avg_risk_score"
-        ]
-        result = df.merge(summary, on="source_ip")
-        result["bytes_rank"] = result.groupby("event_type")["bytes"].rank(
-            method="dense", ascending=False
-        )
-        return result[result["bytes_rank"] <= 10]
+            df = self.data_reader.read_file(self.dataset_path, library='modin')
+            g = df.groupby('source_ip')
+            df['total_bytes'] = g['bytes'].transform('sum')
+            df['avg_response_time_ms'] = g['response_time_ms'].transform('mean')
+            df['avg_risk_score'] = g['risk_score'].transform('mean')
+            df['bytes_rank'] = df.groupby('event_type')['bytes'].rank(method='dense', ascending=False)
+            top10 = df[df['bytes_rank'] <= 10].copy()
+            del df
+            gc.collect()
+            return top10
 
     def complex_join_duckdb(self):
         if not DUCKDB_AVAILABLE:
@@ -539,7 +566,7 @@ class ModularBenchmark:
                         "cpu_count_logical", "cpu_count_physical", "cpu_freq_max", "cpu_freq_current",
                         "memory_total_gb", "memory_available_gb", "python_version", "python_implementation",
                         "cpu_brand", "cpu_arch",  # Host info ends here
-                        "dataset_size",  # Number of records in the dataset
+                        "dataset_size", "dataset_name", "dataset_format",
                         "filter_group_pandas_seconds", "filter_group_modin_seconds", "filter_group_polars_seconds",
                         "filter_group_duckdb_seconds", "filter_group_fireducks_seconds",
                         "statistics_pandas_seconds", "statistics_modin_seconds", "statistics_polars_seconds",
@@ -556,6 +583,21 @@ class ModularBenchmark:
                 def safe_value(value):
                     return "N/A" if value is None else value
                 
+                # Dataset metadata
+                try:
+                    ds_path = self.dataset_path
+                    ds_name = ds_path.name
+                    suffs = [s.lower() for s in ds_path.suffixes]
+                    comp = {'.gz', '.zip', '.zst', '.bz2'}
+                    base = [s for s in suffs if s not in comp]
+                    ext = (base[-1] if base else ds_path.suffix).lower().lstrip('.')
+                    if ext in ('jsonl', 'ndjson'):
+                        ext = 'ndjson'
+                    ds_fmt = ext or 'unknown'
+                except Exception:
+                    ds_name = 'unknown'
+                    ds_fmt = 'unknown'
+
                 row = [
                     host_info.get("timestamp"), host_info.get("hostname"), host_info.get("platform"),
                     host_info.get("system"), host_info.get("release"), host_info.get("version"),
@@ -564,8 +606,8 @@ class ModularBenchmark:
                     host_info.get("cpu_freq_current"), host_info.get("memory_total_gb"),
                     host_info.get("memory_available_gb"), host_info.get("python_version"),
                     host_info.get("python_implementation"), host_info.get("cpu_brand"),
-                    host_info.get("cpu_arch"),  # Host info ends here
-                    dataset_size,  # Dataset size
+                    host_info.get("cpu_arch"),
+                    dataset_size, ds_name, ds_fmt,
                     # Timing columns (fixed order: operation first, then library)
                     safe_value(results.get("filter_group", {}).get("pandas")),
                     safe_value(results.get("filter_group", {}).get("modin")),
@@ -598,30 +640,33 @@ class ModularBenchmark:
 
 
 def main():
-    """Main function demonstrating the modular benchmark system."""
+    """Main function with unified CLI parameters (-d/--dataset, -o/--output)."""
+    parser = argparse.ArgumentParser(description="Modular Data Processing Benchmark")
+    parser.add_argument("-d", "--dataset", type=str, help="Path to dataset file (overrides auto-detect)")
+    parser.add_argument("-o", "--output", type=str, help="Results CSV output path (default: data/benchmark_results.csv)")
+    args = parser.parse_args()
+
     print("="*70)
     print("MODULAR DATA PROCESSING BENCHMARK")
     print("="*70)
-    
+
     try:
-        # Initialize benchmark with automatic configuration
-        benchmark = ModularBenchmark()
-        
+        benchmark = ModularBenchmark(dataset_path=args.dataset)
+
         print(f"📁 Dataset: {benchmark.dataset_path}")
         print(f"📊 Records: {benchmark.dataset_size:,}")
         print(f"🔧 Available libraries: {[lib for lib, avail in benchmark.available_libraries.items() if avail]}")
         print()
-        
-        # Run benchmarks
+
         results = benchmark.run_all_benchmarks()
-        
-        # Save results
-        benchmark.save_results(results)
-        
+
+        # Decide output path
+        output_override = args.output
+        benchmark.save_results(results, filename=output_override)
+
         print("\n" + "="*70)
         print("BENCHMARK COMPLETED SUCCESSFULLY")
         print("="*70)
-        
     except Exception as e:
         print(f"❌ Benchmark failed: {e}")
         import traceback

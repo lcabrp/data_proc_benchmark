@@ -47,6 +47,10 @@ import os
 import pathlib
 from pathlib import Path
 
+# Suppress noisy SyntaxWarnings (e.g. invalid escape sequence '\_') that originate
+# from third-party packages or docstrings not affecting runtime behavior.
+warnings.filterwarnings("ignore", category=SyntaxWarning, message=r"invalid escape sequence \\_")
+
 # Add the project root to Python path for utils import
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, project_root)
@@ -56,6 +60,7 @@ from utils import (
     get_host_info, get_memory_usage_mb, log_memory_usage,
     PlatformDetector, SystemInfo
 )
+from utils.data_io import UniversalDataReader, get_dataset_size as universal_dataset_size
 
 # Get platform flags and library availability from utils
 platform_flags = PlatformDetector.get_platform_flags()
@@ -85,21 +90,73 @@ RESULTS_CSV_PATH.parent.mkdir(parents=True, exist_ok=True)
 # Modin engine configuration - defer to avoid potential import issues
 DEFAULT_MODIN_ENGINE = "dask"  # Safe default, will be set properly in setup_modin()
 
+_universal_reader = UniversalDataReader(default_library='pandas')
+
 def get_dataset_size(csv_path: str) -> int:
-    """
-    Get the number of records in the dataset by reading the CSV file.
-    Args:
-        csv_path (str): Path to the CSV file.
-    Returns:
-        int: Number of records in the dataset.
-    """
+    """Get number of records (supports csv/parquet/json/ndjson, compressed variants)."""
     try:
-        # Use pandas to count rows efficiently
-        df = pd.read_csv(csv_path)
-        return len(df)
+        return universal_dataset_size(Path(csv_path))
     except Exception as e:
         print(f"Warning: Could not determine dataset size: {e}")
         return 0
+
+def _detect_format(path: Union[str, Path]) -> str:
+    """Detect file format using UniversalDataReader logic (csv, parquet, json, ndjson)."""
+    try:
+        return _universal_reader.detect_file_format(Path(path))
+    except Exception:
+        p = Path(path)
+        suffs = [s for s in p.suffixes if s.lower() not in {'.gz', '.zip', '.zst', '.bz2'}]
+        if suffs:
+            ext = suffs[-1].lower()
+            if ext in ('.jsonl', '.ndjson'): return 'ndjson'
+            if ext == '.json': return 'json'
+            if ext == '.parquet': return 'parquet'
+        return 'csv'
+
+def _read_pandas(path: str) -> PandasDataFrame:
+    fmt = _detect_format(path)
+    if fmt == 'parquet':
+        return cast(PandasDataFrame, pd.read_parquet(path))
+    if fmt == 'json':
+        return cast(PandasDataFrame, pd.read_json(path))
+    if fmt == 'ndjson':
+        return cast(PandasDataFrame, pd.read_json(path, lines=True))
+    return cast(PandasDataFrame, pd.read_csv(path))
+
+def _read_modin(path: str) -> ModinDataFrame:
+    fmt = _detect_format(path)
+    if fmt == 'parquet':
+        return cast(ModinDataFrame, mpd.read_parquet(path))
+    if fmt == 'json':
+        return cast(ModinDataFrame, mpd.read_json(path))
+    if fmt == 'ndjson':
+        return cast(ModinDataFrame, mpd.read_json(path, lines=True))
+    return cast(ModinDataFrame, mpd.read_csv(path))
+
+def _polars_lazy(path: str):
+    fmt = _detect_format(path)
+    if fmt == 'csv':
+        return pl.scan_csv(path)
+    if fmt == 'parquet':
+        return pl.scan_parquet(path)
+    if fmt == 'json':
+        # no lazy reader; load eagerly then convert
+        return pl.read_json(path).lazy()
+    if fmt == 'ndjson':
+        try:
+            return pl.read_ndjson(path).lazy()
+        except Exception:
+            return pl.read_json(path, lines=True).lazy()
+    return pl.scan_csv(path)
+
+def _duckdb_source(path: str) -> str:
+    fmt = _detect_format(path)
+    if fmt == 'parquet':
+        return f"read_parquet('{path}')"
+    if fmt in ('json', 'ndjson'):
+        return f"read_json_auto('{path}')"
+    return f"read_csv_auto('{path}')"
 
 def setup_modin() -> None:
     """Initialize Modin with environment-appropriate configuration.
@@ -185,8 +242,8 @@ def get_dask_client() -> Optional[Client]:
         return None
 
 def run_pandas_operation(func: Callable[[PandasDataFrame], Any], csv_path: str) -> Any:
-    """Run operation using Pandas DataFrame"""
-    df = cast(PandasDataFrame, pd.read_csv(csv_path))
+    """Run operation using Pandas DataFrame (format-aware)."""
+    df = _read_pandas(csv_path)
     return func(df)
 
 
@@ -209,28 +266,20 @@ def run_modin_operation(func: Callable[[ModinDataFrame], Any], csv_path: str) ->
 
     client = globals().get('client') or get_dask_client()
     try:
-        # Load data
-        df = cast(ModinDataFrame, mpd.read_csv(csv_path))
-
-        # If no client available, run directly
+        df = _read_modin(csv_path)
         if client is None:
             return func(df)
-
-        # Pre-clean workers
         try:
             client.run(gc.collect)
         except Exception:
             pass
-
-        # Run the operation
         result = func(df)
-
-        # Force computation to complete before returning
         if hasattr(result, '_to_pandas'):
-            _ = result._to_pandas()
-
+            try:
+                _ = result._to_pandas()
+            except Exception:
+                pass
         return result
-
     except Exception as e:
         print(f"Modin operation failed: {str(e)}")
 
@@ -268,7 +317,7 @@ def run_modin_operation(func: Callable[[ModinDataFrame], Any], csv_path: str) ->
             )
             with Client(fallback_cluster) as fb_client:
                 gc.collect()
-                df = cast(ModinDataFrame, mpd.read_csv(csv_path))
+                df = _read_modin(csv_path)
                 result = func(df)
                 if hasattr(result, '_to_pandas'):
                     _ = result._to_pandas()
@@ -287,16 +336,42 @@ def run_modin_operation(func: Callable[[ModinDataFrame], Any], csv_path: str) ->
 
 
 def run_polars_operation(func: Callable[[PolarsDataFrame], Any], csv_path: str) -> Any:
-    """Run operation using Polars DataFrame"""
-    df = cast(PolarsDataFrame, pl.read_csv(csv_path))
+    """Run operation using Polars DataFrame (format-aware)."""
+    fmt = _detect_format(csv_path)
+    if fmt == 'csv':
+        df = cast(PolarsDataFrame, pl.read_csv(csv_path))
+    elif fmt == 'parquet':
+        df = cast(PolarsDataFrame, pl.read_parquet(csv_path))
+    elif fmt == 'json':
+        df = cast(PolarsDataFrame, pl.read_json(csv_path))
+    elif fmt == 'ndjson':
+        try:
+            df = cast(PolarsDataFrame, pl.read_ndjson(csv_path))
+        except Exception:
+            # Fallback: read line-delimited JSON manually
+            with open(csv_path, 'r', encoding='utf-8', errors='ignore') as f:
+                import json as _json
+                records = [_json.loads(line) for line in f if line.strip()]
+            df = cast(PolarsDataFrame, pl.from_dicts(records))
+    else:
+        df = cast(PolarsDataFrame, pl.read_csv(csv_path))
     return func(df)
 
 
 def run_duckdb_operation(func: Callable[[PandasDataFrame], Any], csv_path: str) -> Any:
-    """Run operation using DuckDB (converts to Pandas DataFrame)"""
+    """Run operation using DuckDB (format-aware, converts to pandas DataFrame)."""
+    fmt = _detect_format(csv_path)
     conn = duckdb.connect()
-    df = cast(PandasDataFrame, conn.read_csv(csv_path).df())
-    return func(df)
+    try:
+        if fmt == 'parquet':
+            df = cast(PandasDataFrame, conn.read_parquet(csv_path).df())
+        elif fmt in ('json', 'ndjson'):
+            df = cast(PandasDataFrame, conn.execute(f"SELECT * FROM read_json_auto('{csv_path}')").fetchdf())
+        else:
+            df = cast(PandasDataFrame, conn.read_csv(csv_path).df())
+        return func(df)
+    finally:
+        conn.close()
 
 
 def run_benchmark_operation(
@@ -317,9 +392,9 @@ def run_benchmark_operation(
     """
     try:
         log_memory_usage(f"{library_name} {operation_name} (start)")
-        start = time.time()
+        start = time.perf_counter()
         result = operation_func(csv_path)
-        duration = time.time() - start
+        duration = time.perf_counter() - start
         print(f"{library_name} {operation_name} duration: {duration:.2f}s")
         log_memory_usage(f"{library_name} {operation_name} (end)")
         del result  # Explicitly delete the result
@@ -357,7 +432,7 @@ def pandas_filter_group(csv_path: str):
     Returns:
         pd.DataFrame: Resulting DataFrame.
     """
-    df = pd.read_csv(csv_path)
+    df = _read_pandas(csv_path)
     result = df[df["status_code"] == 200].groupby("source_ip").agg({"bytes": "sum"})
     return result
 
@@ -369,7 +444,7 @@ def pandas_stats(csv_path: str):
     Returns:
         pd.DataFrame: Resulting DataFrame.
     """
-    df = pd.read_csv(csv_path)
+    df = _read_pandas(csv_path)
     result = df.groupby("event_type").agg({
         "bytes": ["mean", "std", "min", "max"],
         "response_time_ms": ["mean", "median"],
@@ -385,7 +460,7 @@ def pandas_complex(csv_path: str):
     Returns:
         pd.DataFrame: Top 10 by bytes per event_type.
     """
-    df = pd.read_csv(csv_path)
+    df = _read_pandas(csv_path)
     summary = df.groupby("source_ip").agg({"bytes": "sum", "response_time_ms": "mean", "risk_score": "mean"}).reset_index()
     old_cols = summary.columns.tolist()
     new_cols = ["source_ip", "total_bytes", "avg_response_time_ms", "avg_risk_score"]
@@ -402,7 +477,7 @@ def pandas_timeseries(csv_path: str):
     Returns:
         pd.DataFrame: Resulting DataFrame.
     """
-    df = pd.read_csv(csv_path)
+    df = _read_pandas(csv_path)
     if 'timestamp' in df.columns:
         df['timestamp'] = pd.to_datetime(df['timestamp'])
         df['hour'] = df['timestamp'].dt.hour
@@ -456,14 +531,18 @@ def modin_complex(csv_path: str) -> ModinDataFrame:
         ModinDataFrame: Top 10 by bytes per event_type.
     """
     def _modin_complex(df: ModinDataFrame) -> ModinDataFrame:
-        # Create a summary table and join back (matches working benchmark.py implementation)
-        grouped = df.groupby("source_ip").agg({"bytes": "sum", "response_time_ms": "mean", "risk_score": "mean"})
-        summary = cast(ModinDataFrame, grouped.reset_index())
-        summary.columns = pd.Index(["source_ip", "total_bytes", "avg_response_time_ms", "avg_risk_score"])
-        result = cast(ModinDataFrame, df.merge(summary, on="source_ip"))
-        # Add window function - rank by bytes within each event_type
-        result["bytes_rank"] = result.groupby("event_type")["bytes"].rank(method="dense", ascending=False)
-        return cast(ModinDataFrame, result[result["bytes_rank"] <= 10])  # Top 10 by bytes per event_type
+        grouped = df.groupby("source_ip").agg({"bytes": "sum", "response_time_ms": "mean", "risk_score": "mean"})  # type: ignore[attr-defined]
+        summary = cast(ModinDataFrame, grouped.reset_index())  # type: ignore[assignment]
+        try:
+            summary.columns = pd.Index(["source_ip", "total_bytes", "avg_response_time_ms", "avg_risk_score"])  # type: ignore[attr-defined]
+        except Exception:
+            pass
+        result = cast(ModinDataFrame, df.merge(summary, on="source_ip"))  # type: ignore[attr-defined]
+        try:
+            result["bytes_rank"] = result.groupby("event_type")["bytes"].rank(method="dense", ascending=False)  # type: ignore[attr-defined]
+        except Exception:
+            return result
+        return cast(ModinDataFrame, result[result["bytes_rank"] <= 10])
     return cast(ModinDataFrame, run_modin_operation(_modin_complex, csv_path))
 
 def modin_timeseries(csv_path: str) -> ModinDataFrame:
@@ -518,7 +597,7 @@ def polars_filter_group(csv_path: str):
     Returns:
         pl.DataFrame: Resulting DataFrame.
     """
-    df = pl.scan_csv(csv_path)  # Lazy evaluation
+    df = _polars_lazy(csv_path)  # Lazy evaluation
     result = (df.filter(pl.col("status_code") == 200)
                .group_by("source_ip")
                .agg(pl.sum("bytes")))
@@ -532,7 +611,7 @@ def polars_stats(csv_path: str):
     Returns:
         pl.DataFrame: Resulting DataFrame.
     """
-    df = pl.scan_csv(csv_path)
+    df = _polars_lazy(csv_path)
     result = (df.group_by("event_type")
                .agg([
                    pl.col("bytes").mean().alias("bytes_mean"),
@@ -554,7 +633,7 @@ def polars_complex(csv_path: str):
     Returns:
         pl.DataFrame: Top 10 by bytes per event_type.
     """
-    df = pl.scan_csv(csv_path)
+    df = _polars_lazy(csv_path)
     summary = (df.group_by("source_ip")
                 .agg([pl.col("bytes").sum().alias("total_bytes"),
                       pl.col("response_time_ms").mean().alias("avg_response_time_ms"),
@@ -574,7 +653,7 @@ def polars_timeseries(csv_path: str):
     Returns:
         pl.DataFrame: Resulting DataFrame.
     """
-    df = pl.scan_csv(csv_path)
+    df = _polars_lazy(csv_path)
     if 'timestamp' in df.columns:
         result = (df.with_columns([
             pl.col('timestamp').str.strptime(pl.Datetime).alias('timestamp_parsed'),
@@ -599,10 +678,11 @@ def duckdb_filter_group(csv_path: str):
     Returns:
         pd.DataFrame: Resulting DataFrame.
     """
+    source = _duckdb_source(csv_path)
     with duckdb.connect() as conn:
         return conn.execute(f"""
             SELECT source_ip, SUM(bytes) as bytes
-            FROM read_csv_auto('{csv_path}')
+            FROM {source}
             WHERE status_code = 200
             GROUP BY source_ip
         """).fetchdf()
@@ -615,6 +695,7 @@ def duckdb_stats(csv_path: str):
     Returns:
         pd.DataFrame: Resulting DataFrame.
     """
+    source = _duckdb_source(csv_path)
     with duckdb.connect() as conn:
         return conn.execute(f"""
             SELECT event_type,
@@ -626,7 +707,7 @@ def duckdb_stats(csv_path: str):
                    MEDIAN(response_time_ms) as response_time_ms_median,
                    AVG(risk_score) as risk_score_mean,
                    STDDEV(risk_score) as risk_score_std
-            FROM read_csv_auto('{csv_path}')
+            FROM {source}
             GROUP BY event_type
         """).fetchdf()
 
@@ -638,6 +719,7 @@ def duckdb_complex(csv_path: str):
     Returns:
         pd.DataFrame: Top 10 by bytes per event_type.
     """
+    source = _duckdb_source(csv_path)
     with duckdb.connect() as conn:
         return conn.execute(f"""
             WITH summary AS (
@@ -645,13 +727,13 @@ def duckdb_complex(csv_path: str):
                        SUM(bytes) as total_bytes,
                        AVG(response_time_ms) as avg_response_time_ms,
                        AVG(risk_score) as avg_risk_score
-                FROM read_csv_auto('{csv_path}')
+                FROM {source}
                 GROUP BY source_ip
             ),
             ranked AS (
                 SELECT d.*, s.total_bytes, s.avg_response_time_ms, s.avg_risk_score,
                        DENSE_RANK() OVER (PARTITION BY d.event_type ORDER BY d.bytes DESC) as bytes_rank
-                FROM read_csv_auto('{csv_path}') d
+                FROM {source} d
                 JOIN summary s ON d.source_ip = s.source_ip
             )
             SELECT * FROM ranked WHERE bytes_rank <= 10
@@ -665,6 +747,7 @@ def duckdb_timeseries(csv_path: str):
     Returns:
         pd.DataFrame: Resulting DataFrame.
     """
+    source = _duckdb_source(csv_path)
     with duckdb.connect() as conn:
         try:
             return conn.execute(f"""
@@ -674,14 +757,14 @@ def duckdb_timeseries(csv_path: str):
                        COUNT(bytes) as bytes_count,
                        AVG(response_time_ms) as response_time_ms_mean,
                        AVG(risk_score) as risk_score_mean
-                FROM read_csv_auto('{csv_path}')
+                FROM {source}
                 GROUP BY hour, event_type
                 ORDER BY hour, event_type
             """).fetchdf()
-        except:
+        except Exception:
             return conn.execute(f"""
                 SELECT status_code, event_type, COUNT(*) as count
-                FROM read_csv_auto('{csv_path}')
+                FROM {source}
                 GROUP BY status_code, event_type
             """).fetchdf()
 
@@ -800,8 +883,9 @@ def run_library_benchmarks(library_name: str, csv_path: str, repeat: int = 1) ->
     for operation_name, operation_func in operations.items():
         print(f"\n--- {library_name.upper()} {operation_name} ---")
         duration = run_benchmark_operation(library_name, operation_func, operation_name, csv_path)
-        if duration is not None and duration > 0:
-            results[operation_name] = duration
+        if duration is not None:
+            # Clamp extremely small/zero durations to a tiny epsilon for visibility
+            results[operation_name] = duration if duration > 0 else 0.000001
     return results
 
 def run_all_benchmarks(csv_path: str, repeat: int = 1) -> dict:
@@ -826,7 +910,7 @@ def run_all_benchmarks(csv_path: str, repeat: int = 1) -> dict:
             results[library_name] = library_results
     return results
 
-def save_results_to_csv(results: dict, host_info: dict, script_name: str, dataset_size: int) -> None:
+def save_results_to_csv(results: dict, host_info: dict, script_name: str, dataset_size: int, dataset_path: Union[str, Path]) -> None:
     """
     Save benchmark results to CSV file.
     Args:
@@ -835,43 +919,85 @@ def save_results_to_csv(results: dict, host_info: dict, script_name: str, datase
         script_name (str): Name of the script creating the record.
         dataset_size (int): Number of records in the dataset.
     """
-    row_data = host_info.copy()
+    # Explicit column order to match other scripts:
+    # host info (18) -> dataset_size -> dataset_name -> dataset_format -> timings -> script_name
+    host_order = [
+        "timestamp", "hostname", "platform", "system", "release", "version", "machine", "processor",
+        "cpu_count_logical", "cpu_count_physical", "cpu_freq_max", "cpu_freq_current",
+        "memory_total_gb", "memory_available_gb", "python_version", "python_implementation",
+        "cpu_brand", "cpu_arch"
+    ]
     operations = ["filter_group", "statistics", "complex_join", "timeseries"]
     libraries = ["pandas", "modin", "polars", "duckdb", "fireducks"]
 
+    # Build timing keys list in deterministic order
+    timing_keys: List[str] = []
+    timing_pairs: List[tuple[str, str]] = []  # (operation, library)
     for op in operations:
         for lib in libraries:
-            key = f"{op}_{lib}_seconds"
-            value = results.get(lib, {}).get(op)
-            # If Fireducks is not available, always set to 0 or N/A
-            if lib == "fireducks" and not FIREDUCKS_AVAILABLE:
-                value = 0
-            if value is None:
-                value = "N/A"
-            row_data[key] = value
-    
-    # Add script_name and dataset_size to row_data
-    row_data["script_name"] = script_name
-    row_data["dataset_size"] = dataset_size
-    
+            timing_keys.append(f"{op}_{lib}_seconds")
+            timing_pairs.append((op, lib))
+
+    # Derive dataset metadata from provided path (not global default)
+    try:
+        ds_path = Path(dataset_path)
+        ds_name = ds_path.name if ds_path.name else 'unknown'
+        suffs = [s.lower() for s in ds_path.suffixes]
+        comp = {'.gz', '.zip', '.zst', '.bz2'}
+        base = [s for s in suffs if s not in comp]
+        ext = (base[-1] if base else ds_path.suffix).lower().lstrip('.')
+        if ext in ('jsonl', 'ndjson'):
+            ext = 'ndjson'
+        ds_fmt = ext or 'unknown'
+    except Exception:
+        ds_name = 'unknown'
+        ds_fmt = 'unknown'
+
+    # Construct row
+    row = []
+    for k in host_order:
+        row.append(host_info.get(k))
+    row.append(dataset_size)
+    row.append(ds_name)
+    row.append(ds_fmt)
+
+    # Append timing values
+    for (op_name, lib_name) in timing_pairs:
+        val = results.get(lib_name, {}).get(op_name)
+        if lib_name == "fireducks" and not FIREDUCKS_AVAILABLE:
+            val = 0
+        if val is None:
+            val = "N/A"
+        row.append(val)
+
+    row.append(script_name)
+
+    # Prepare header (mirrors order)
+    header = host_order + [
+        "dataset_size", "dataset_name", "dataset_format"
+    ] + timing_keys + ["script_name"]
+
     file_exists = os.path.exists(RESULTS_CSV_PATH)
-    with open(RESULTS_CSV_PATH, 'a', newline='', encoding='utf-8') as csvfile:  # Added UTF-8 encoding
-        if row_data:
-            fieldnames = list(row_data.keys())
-            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-            if not file_exists:
-                writer.writeheader()
-            writer.writerow(row_data)
-            print(f"Results saved to {RESULTS_CSV_PATH}")
+    with open(RESULTS_CSV_PATH, 'a', newline='', encoding='utf-8') as csvfile:
+        writer = csv.writer(csvfile)
+        if not file_exists:
+            writer.writerow(header)
+        writer.writerow(row)
+        print(f"Results saved to {RESULTS_CSV_PATH}")
 
 def main():
     global client
     client = get_dask_client()
     parser = argparse.ArgumentParser(description="Comprehensive Data Processing Benchmark")
-    parser.add_argument("--csv", type=str, default=CSV_PATH, help="Path to input CSV file")
-    parser.add_argument("--results", type=str, default=RESULTS_CSV_PATH, help="Path to results CSV file")
+    parser.add_argument("-d", "--dataset", type=str, required=False, help="Path to input dataset file (auto-detect defaults if omitted)")
+    parser.add_argument("-o", "--output", type=str, required=False, help="Path to results CSV file (default: data/benchmark_results.csv)")
     parser.add_argument("--repeat", type=int, default=1, help="Number of times to repeat each benchmark (default: 1)")
     args = parser.parse_args()
+
+    csv_path = Path(args.dataset) if args.dataset else CSV_PATH
+    results_path = Path(args.output) if args.output else RESULTS_CSV_PATH
+    if not csv_path.exists():
+        print(f"Warning: dataset path {csv_path} does not exist (will attempt to read anyway)")
 
     print("="*60)
     print("COMPREHENSIVE DATA PROCESSING BENCHMARK")
@@ -882,18 +1008,20 @@ def main():
     print(f"Running on: {host_info.get('hostname', 'Unknown')} ({host_info.get('platform', 'Unknown')})")
     print(f"CPU: {host_info.get('cpu_brand', 'Unknown')} ({host_info.get('cpu_count_logical', 'N/A')} logical cores)")
     print(f"Memory: {host_info.get('memory_total_gb', 'N/A')} GB total")
-    print(f"\nStarting comprehensive benchmark with {args.csv}")
+    print(f"\nStarting comprehensive benchmark with {csv_path}")
     print("This will test 4 different operations across all available libraries...")
     log_memory_usage("Initial memory usage")
     
     # Get dataset size
-    dataset_size = get_dataset_size(args.csv)
+    dataset_size = get_dataset_size(str(csv_path))
     print(f"Dataset size: {dataset_size:,} records")
     
-    results = run_all_benchmarks(args.csv, args.repeat)
+    results = run_all_benchmarks(str(csv_path), args.repeat)
     log_memory_usage("Final memory usage")
     script_name = "benchmark_01.py"  # Or use __file__.split('/')[-1]
-    save_results_to_csv(results, host_info, script_name, dataset_size)
+    # Temporarily update global RESULTS_CSV_PATH for save function compatibility
+    globals()['RESULTS_CSV_PATH'] = results_path
+    save_results_to_csv(results, host_info, script_name, dataset_size, csv_path)
     
     # Cleanup Ray if it was initialized
     if DEFAULT_MODIN_ENGINE == "ray" and RAY_AVAILABLE:
@@ -920,7 +1048,7 @@ def main():
             for lib, duration in sorted(operation_timings.items(), key=lambda x: x[1]):
                 speedup = fastest[1] / duration if duration > 0 else 0
                 print(f"  {lib:10}: {duration:6.2f}s (x{speedup:.1f})")
-    print(f"\nResults saved to: {args.results}")
+    print(f"\nResults saved to: {results_path}")
     print("Benchmark completed!")
 # --- End of benchmark.py ---
 

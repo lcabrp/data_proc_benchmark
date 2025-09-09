@@ -1,6 +1,6 @@
 # 🚀 Data Processing Performance Benchmark
 
-A comprehensive benchmarking suite that compares the performance of popular Python data processing libraries using real-world datasets. Perfect for data scientists, engineers, and researchers who want to make informed decisions about which library to use for their projects.
+A comprehensive benchmarking suite that compares the performance of popular Python data processing libraries using real-world datasets. Perfect for data scientists, engineers, and researchers who want to make informed decisions about which library to use for their projects. Now includes per‑operation memory delta tracking (RSS) and optimized complex join algorithms to reduce transient peak usage.
 
 This project now includes a modular benchmark runner with universal file-format support and automatic dataset detection.
 
@@ -99,9 +99,11 @@ If you prefer the traditional Python workflow:
 
 ### 📊 View Your Results
 
-After running, open `data/benchmark_results.csv` to see detailed performance comparisons. Missing/unsupported libraries are recorded as "N/A" to avoid misleading zeros.
+After running, open `data/benchmark_results.csv` to see detailed performance comparisons. Missing/unsupported libraries are recorded as "N/A" to avoid misleading zeros. For the modular benchmark, additional columns report per‑operation memory delta (RSS MB) where collected.
 
 Supported input formats (auto‑detected): CSV (.csv, .csv.gz, .csv.zip, .csv.zst), Parquet (.parquet), JSON (.json), and NDJSON/JSONL (.ndjson/.jsonl).
+
+Stored output now also includes dataset file metadata columns: `dataset_name` (filename) and `dataset_format` (csv, parquet, json, ndjson). This lets you directly compare performance across storage formats.
 
 ### 🆘 First-Time Setup Help
 
@@ -141,9 +143,21 @@ TIMESERIES Operation:
 
 | Script | Purpose | Best For |
 |--------|---------|----------|
-| `benchmark_modular.py` | **Recommended** - Modular, universal format support, auto dataset detection | Most users |
-| `benchmark_01.py` | Enhanced with cross-platform optimizations | Reference/compat |
-| `benchmark.py` | **Reference** - Original implementation | High-memory systems, research comparisons |
+| `benchmark_modular.py` | **Recommended** - Modular, universal format support, auto dataset detection, memory deltas | Most users |
+| `benchmark_01.py` | Enhanced with cross-platform optimizations (unified CLI) | Reference/compat |
+| `benchmark_02.py` | Reliability + universal format + log suppression | Alternate runner |
+| `benchmark.py` | **Reference** - Original implementation (baseline kept) | High-memory systems, research comparisons |
+
+### Unified CLI Flags
+All active benchmark scripts now use a single flag set:
+
+```
+   -d / --dataset   Path to dataset file (optional if auto-detect applies)
+   -o / --output    Results CSV output path (default: data/benchmark_results.csv)
+   --repeat N       Repeat each operation N times (where supported; default: 1)
+```
+
+Legacy flags `--csv` and `--results` were removed early for consistency.
 
 ## 🌐 Cross-Platform Compatibility
 
@@ -156,9 +170,10 @@ TIMESERIES Operation:
 
 Each benchmark run automatically collects:
 - **System Information**: CPU, memory, platform details
-- **Performance Metrics**: Execution times for each library/operation combination
+- **Performance Metrics**: Execution times for each library/operation combination (and memory deltas in modular runner)
 - **Environment Details**: Python version, library versions
 - **Results History**: All runs saved to CSV for trend analysis
+ - **Dataset Metadata**: Dataset filename (`dataset_name`) and normalized format (`dataset_format`)
 
 ## 🎯 Use Cases
 
@@ -210,4 +225,4 @@ This project is open source. See LICENSE file for details.
 
 **💡 Pro Tip**: Start with `benchmark_01.py` for reliable cross-platform results, then experiment with other versions based on your specific needs!
 
-Updated August 2025.
+Updated September 2025.

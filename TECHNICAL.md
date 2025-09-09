@@ -55,6 +55,31 @@ Key internal functions added:
 - Added complex_join and timeseries operations for pandas/polars/modin/duckdb
 - Results writer adjusted to avoid zeros for missing timings
 
+### Memory Instrumentation & Join Optimization (Post 0.1.2 → 0.1.3)
+
+`benchmark_modular.py` gained two major enhancements for resource transparency and lower peak memory usage:
+
+1. **Per‑Operation Memory Deltas**
+    - Tracks RSS before & after each operation (psutil) and records delta MB.
+    - Enables profiling which libraries/operations cause the largest working set expansions.
+    - Helps distinguish inherent algorithm cost vs data format impact.
+
+2. **Complex Join Refactor**
+    - Pandas / Modin: replaced materializing an aggregated summary + merge with in‑place `groupby().transform(...)` assignments (sum/mean metrics + rank). Eliminates an intermediate wide join DataFrame.
+    - Polars: replaced join-based enrichment with a single lazy pipeline applying window functions (`sum().over()`, `mean().over()`, `rank().over()`) followed by top‑N filter before `.collect()`. Reduces materialization and leverages predicate pruning.
+    - DuckDB path unchanged (SQL window plan already efficient).
+
+3. **Result Trimming (Optional Behavior)**
+    - For complex join, only top‑ranked rows (bytes_rank ≤ 10) materialized, limiting large intermediate outputs retained in Python space.
+
+4. **Garbage Collection & Early Deletion**
+    - Large intermediates explicitly `del`'d prior to `gc.collect()` to hint at earlier release; helpful on CPython with large object graphs.
+
+Limitations / Next Steps:
+    - Column-subset selective reading planned (partial patch attempts) but not yet uniformly applied to all operations.
+    - `--repeat` flag still parsed but not leveraged for averaging in modular script.
+    - Memory tracking currently coarse (RSS delta); deeper instrumentation (peak tracking via tracemalloc) deferred to a later version.
+
 ### Further Enhanced Implementation (`benchmark_02.py`)
 Building on v1's foundation, v2 addressed additional reliability and usability issues:
 
@@ -64,6 +89,18 @@ Building on v1's foundation, v2 addressed additional reliability and usability i
 - **CSV Alignment and Handling**: Fixed key order mismatches and added safe handling for None/0.0 values (saving 0.0 for skipped libraries, N/A for failures)
 - **Summary Accuracy**: Excluded zero-duration results from "fastest" comparisons to avoid misleading winners (e.g., FireDucks at 0.0s)
 - **Host Info Integration**: Centralized system information collection using the `utils.host_info` module
+
+### Unified CLI Interface
+
+All maintained scripts (`benchmark.py`, `benchmark_01.py`, `benchmark_02.py`, `benchmark_modular.py`) now accept:
+
+```
+    -d / --dataset   Dataset path (auto-detect fallback where supported)
+    -o / --output    Results CSV path (default data/benchmark_results.csv)
+    --repeat N       Repeat count (default 1; ignored if a script doesn't implement repetition)
+```
+
+Removed legacy flags `--csv` and `--results` (previously only in `benchmark_01.py`). Update any local invocation scripts accordingly.
 
 ## Modin Setup and Stability Guide
 
@@ -261,6 +298,21 @@ except ImportError:
 ```
 
 **Result**: Detailed CPU information
+
+### Dataset Format Tracking
+
+**Problem**: Benchmark comparisons across file formats (CSV vs Parquet vs NDJSON) required manually remembering which dataset form was used.
+
+**Solution**: Added two new columns to the results CSV schema:
+ - `dataset_name`: The full filename of the source dataset (e.g. `synthetic_logs_10M.parquet`)
+ - `dataset_format`: Normalized logical format (csv, parquet, json, ndjson) with compression extensions removed (e.g. `.csv.gz` -> `csv`)
+
+**Normalization Rules**:
+ - Compression suffixes (`.gz`, `.zip`, `.zst`, `.bz2`) are stripped
+ - `.jsonl` and `.ndjson` mapped to `ndjson`
+ - Unknown/parse failure -> `unknown`
+
+**Impact**: Enables longitudinal performance tracking segmented by storage format without needing external joins or filename parsing.
 ```csv
 cpu_brand,"Intel(R) Core(TM) i7-1065G7 CPU @ 1.30GHz"
 cpu_arch,"X86_64"

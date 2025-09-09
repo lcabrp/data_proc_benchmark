@@ -15,6 +15,9 @@ from contextlib import redirect_stderr, redirect_stdout
 from typing import cast, Optional, Iterable
 from pathlib import Path
 
+# Suppress noisy SyntaxWarnings (e.g. invalid escape sequence '\_')
+warnings.filterwarnings("ignore", category=SyntaxWarning, message=r"invalid escape sequence \\_")
+
 # Add the project root to Python path for utils import
 project_root = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(project_root))
@@ -152,7 +155,7 @@ def _write_one_results_csv(path: Path, results: dict, host_info: dict, script_na
                     "cpu_count_logical", "cpu_count_physical", "cpu_freq_max", "cpu_freq_current",
                     "memory_total_gb", "memory_available_gb", "python_version", "python_implementation",
                     "cpu_brand", "cpu_arch",
-                    "dataset_size",
+                    "dataset_size", "dataset_name", "dataset_format",
                     "filter_group_pandas_seconds", "filter_group_modin_seconds", "filter_group_polars_seconds",
                     "filter_group_duckdb_seconds", "filter_group_fireducks_seconds",
                     "statistics_pandas_seconds", "statistics_modin_seconds", "statistics_polars_seconds",
@@ -168,6 +171,20 @@ def _write_one_results_csv(path: Path, results: dict, host_info: dict, script_na
             def safe_value(v):
                 return "N/A" if v is None else v
 
+            # Derive dataset metadata
+            try:
+                ds_name = DATASET_PATH.name if DATASET_PATH else 'unknown'
+                suffs = [s.lower() for s in (DATASET_PATH.suffixes if DATASET_PATH else [])]
+                comp = {'.gz', '.zip', '.zst', '.bz2'}
+                base = [s for s in suffs if s not in comp]
+                ext = (base[-1] if base else (DATASET_PATH.suffix if DATASET_PATH else '')).lower().lstrip('.')
+                if ext in ('jsonl', 'ndjson'):
+                    ext = 'ndjson'
+                ds_fmt = ext or 'unknown'
+            except Exception:
+                ds_name = 'unknown'
+                ds_fmt = 'unknown'
+
             row = [
                 host_info.get("timestamp"), host_info.get("hostname"), host_info.get("platform"),
                 host_info.get("system"), host_info.get("release"), host_info.get("version"),
@@ -175,7 +192,7 @@ def _write_one_results_csv(path: Path, results: dict, host_info: dict, script_na
                 host_info.get("cpu_count_physical"), host_info.get("cpu_freq_max"), host_info.get("cpu_freq_current"),
                 host_info.get("memory_total_gb"), host_info.get("memory_available_gb"), host_info.get("python_version"),
                 host_info.get("python_implementation"), host_info.get("cpu_brand"), host_info.get("cpu_arch"),
-                dataset_size,
+                dataset_size, ds_name, ds_fmt,
                 safe_value(results.get("filter_group", {}).get("pandas")),
                 safe_value(results.get("filter_group", {}).get("modin")),
                 safe_value(results.get("filter_group", {}).get("polars")),
