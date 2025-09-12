@@ -15,6 +15,7 @@ import gzip
 import json
 import zipfile
 from pathlib import Path
+import numpy as np
 
 # Define specialized DataFrame types for type checking
 PandasDataFrame = pandas.DataFrame
@@ -49,7 +50,7 @@ from pathlib import Path
 
 # Suppress noisy SyntaxWarnings (e.g. invalid escape sequence '\_') that originate
 # from third-party packages or docstrings not affecting runtime behavior.
-warnings.filterwarnings("ignore", category=SyntaxWarning, message=r"invalid escape sequence \\_")
+warnings.filterwarnings("ignore", category=SyntaxWarning, message=r"invalid escape sequence '\\_'")
 
 # Add the project root to Python path for utils import
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -965,9 +966,9 @@ def save_results_to_csv(results: dict, host_info: dict, script_name: str, datase
     for (op_name, lib_name) in timing_pairs:
         val = results.get(lib_name, {}).get(op_name)
         if lib_name == "fireducks" and not FIREDUCKS_AVAILABLE:
-            val = 0
+            val = np.nan
         if val is None:
-            val = "N/A"
+            val = np.nan
         row.append(val)
 
     row.append(script_name)

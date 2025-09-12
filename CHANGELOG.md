@@ -52,3 +52,6 @@ The format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.
 ## [0.1.0] - 2025-08-??
 ### Initial
 - Initial public structure with multiple benchmark script variants and utilities.
+
+## [Unreleased]
+- Standardized unavailable library results to use `np.nan` instead of 0 or "N/A" for better analysis compatibility

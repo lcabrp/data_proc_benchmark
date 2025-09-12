@@ -14,6 +14,7 @@ import gzip
 import json
 import zipfile
 import argparse
+import numpy as np
 from typing import Union, Any
 from contextlib import redirect_stderr, redirect_stdout
 from typing import cast
@@ -249,7 +250,7 @@ def save_results_to_csv(results: dict, host_info: dict, script_name: str, datase
             
             # Helper function to handle None values
             def safe_value(value):
-                return "N/A" if value is None else value
+                return np.nan if value is None or value == 0.0 else value
             
             # Derive dataset metadata
             try:

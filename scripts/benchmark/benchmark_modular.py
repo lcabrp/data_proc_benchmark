@@ -48,6 +48,8 @@ try:
 except ImportError:
     DUCKDB_AVAILABLE = False
 
+import numpy as np
+
 
 class ModularBenchmark:
     """
@@ -581,7 +583,7 @@ class ModularBenchmark:
                 
                 # Helper function to handle None values (match original: use 'N/A')
                 def safe_value(value):
-                    return "N/A" if value is None else value
+                    return np.nan if value is None else value
                 
                 # Dataset metadata
                 try:

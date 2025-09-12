@@ -14,6 +14,7 @@ import argparse
 from contextlib import redirect_stderr, redirect_stdout
 from typing import cast, Optional, Iterable
 from pathlib import Path
+import numpy as np
 
 # Suppress noisy SyntaxWarnings (e.g. invalid escape sequence '\_')
 warnings.filterwarnings("ignore", category=SyntaxWarning, message=r"invalid escape sequence \\_")
@@ -169,7 +170,7 @@ def _write_one_results_csv(path: Path, results: dict, host_info: dict, script_na
                 writer.writerow(header)
 
             def safe_value(v):
-                return "N/A" if v is None else v
+                return np.nan if v is None else v
 
             # Derive dataset metadata
             try:
