@@ -81,19 +81,30 @@ class ModularBenchmark:
         if dataset_path:
             resolved = Path(dataset_path)
             if not resolved.exists():
-                print(f"Warning: specified dataset {resolved} not found; falling back to auto-detect")
-                resolved = None
+                raise FileNotFoundError(f"Specified dataset {resolved} does not exist.")
+            if not resolved.is_file():
+                raise ValueError(f"Specified path {resolved} is not a file.")
         else:
             resolved = None
         if resolved is None:
             resolved = self.dataset_finder.find_dataset(self.config.project_root)
-        if not resolved:
+        if not resolved or not resolved.exists():
             raise FileNotFoundError("No suitable dataset found!")
+        
+        # Validate dataset is readable
+        try:
+            with open(resolved, 'r', encoding='utf-8', errors='ignore') as f:
+                f.read(1)  # Just check if readable
+        except Exception as e:
+            raise ValueError(f"Dataset {resolved} is not readable: {e}")
+        
         self.dataset_path = resolved
         print(f"Using dataset: {self.dataset_path}")
         
         # Get dataset size after confirming path is valid
         self.dataset_size = self._get_dataset_size()
+        if self.dataset_size == 0:
+            print("Warning: Dataset appears empty or unreadable.")
         
         # Setup available libraries
         self.available_libraries = self._detect_available_libraries()
@@ -142,6 +153,16 @@ class ModularBenchmark:
             return {
                 'status': 'error', 
                 'reason': f'Operation {operation_name}_{library} not implemented',
+                'execution_time': None,
+                'memory_usage': None,
+                'result_shape': None
+            }
+        
+        # Check Modin client if using Modin
+        if library == "modin" and '_dask_client' not in globals():
+            return {
+                'status': 'error',
+                'reason': 'Modin client not initialized',
                 'execution_time': None,
                 'memory_usage': None,
                 'result_shape': None
@@ -204,22 +225,31 @@ class ModularBenchmark:
     
     def filter_group_pandas(self):
         """Filter and group operation using pandas."""
-        df = self.data_reader.read_file(self.dataset_path, library='pandas')
-        return df[df["status_code"] == 200].groupby("source_ip").agg({"bytes": "sum"})
+        try:
+            df = self.data_reader.read_file(self.dataset_path, library='pandas')
+            return df[df["status_code"] == 200].groupby("source_ip").agg({"bytes": "sum"})
+        except Exception as e:
+            raise RuntimeError(f"Pandas filter_group failed: {e}")
     
     def filter_group_polars(self):
         """Filter and group operation using polars."""
         if not POLARS_AVAILABLE or pl is None:
             raise RuntimeError("Polars not available")
-        df = self.data_reader.read_file(self.dataset_path, library='polars')
-        return (df.filter(pl.col("status_code") == 200)
-                 .group_by("source_ip")
-                 .agg(pl.sum("bytes")))
+        try:
+            df = self.data_reader.read_file(self.dataset_path, library='polars')
+            return (df.filter(pl.col("status_code") == 200)
+                     .group_by("source_ip")
+                     .agg(pl.sum("bytes")))
+        except Exception as e:
+            raise RuntimeError(f"Polars filter_group failed: {e}")
     
     def filter_group_modin(self):
         """Filter and group operation using modin."""
-        df = self.data_reader.read_file(self.dataset_path, library='modin')
-        return df[df["status_code"] == 200].groupby("source_ip").agg({"bytes": "sum"})
+        try:
+            df = self.data_reader.read_file(self.dataset_path, library='modin')
+            return df[df["status_code"] == 200].groupby("source_ip").agg({"bytes": "sum"})
+        except Exception as e:
+            raise RuntimeError(f"Modin filter_group failed: {e}")
     
     def _duckdb_table_expr(self) -> str:
         """Return a DuckDB table expression for the current dataset path based on format."""
@@ -275,22 +305,25 @@ class ModularBenchmark:
     
     def stats_modin(self):
         """Statistical analysis using modin."""
-        # For parquet files, Modin doesn't support usecols, so read all columns
-        if self.dataset_path.suffix == '.parquet':
-            df = self.data_reader.read_file(self.dataset_path, library='modin')
-        else:
-            df = self.data_reader.read_file(self.dataset_path, library='modin', 
-                                           usecols=["event_type", "bytes", "response_time_ms", "risk_score"])
-        
-        # Select only the columns we need for the analysis
-        if "event_type" in df.columns and "bytes" in df.columns:
-            df = df[["event_type", "bytes", "response_time_ms", "risk_score"]]
-        
-        return df.groupby("event_type").agg({
-            "bytes": ["mean", "std", "min", "max"],
-            "response_time_ms": ["mean", "median"], 
-            "risk_score": ["mean", "std"]
-        })
+        try:
+            # For parquet files, Modin doesn't support usecols, so read all columns
+            if self.dataset_path.suffix == '.parquet':
+                df = self.data_reader.read_file(self.dataset_path, library='modin')
+            else:
+                df = self.data_reader.read_file(self.dataset_path, library='modin', 
+                                               usecols=["event_type", "bytes", "response_time_ms", "risk_score"])
+            
+            # Select only the columns we need for the analysis
+            if "event_type" in df.columns and "bytes" in df.columns:
+                df = df[["event_type", "bytes", "response_time_ms", "risk_score"]]
+            
+            return df.groupby("event_type").agg({
+                "bytes": ["mean", "std", "min", "max"],
+                "response_time_ms": ["mean", "median"], 
+                "risk_score": ["mean", "std"]
+            })
+        except Exception as e:
+            raise RuntimeError(f"Modin stats failed: {e}")
     
     def stats_duckdb(self):
         """Statistical analysis using duckdb (SQL)."""
@@ -482,9 +515,9 @@ class ModularBenchmark:
         for operation in operations:
             for library in libraries:
                 print(f"  Running {operation} with {library}...")
-
+                
                 result = self.run_operation(operation, library)
-
+                
                 # Add metadata
                 result.update({
                     'timestamp': time.time(),
@@ -505,10 +538,11 @@ class ModularBenchmark:
                 if result['status'] == 'success':
                     time_str = f"{result['execution_time']:.2f}s"
                     shape_str = f", shape: {result['result_shape']}" if result['result_shape'] else ""
-                    print(f"    ✓ Completed in {time_str}{shape_str}")
+                    mem_str = f", memory: {result['memory_usage']}MB" if result['memory_usage'] else ""
+                    print(f"    ✓ Completed in {time_str}{shape_str}{mem_str}")
                 else:
                     print(f"    ✗ {result['status']}: {result['reason']}")
-
+        
         return results
     
     def save_results(self, results: List[Dict[str, Any]], filename: Optional[str] = None):
@@ -641,6 +675,185 @@ class ModularBenchmark:
             raise
 
 
+def setup_modin():
+    """Initialize Modin with memory-optimized Dask configuration for Windows."""
+    try:
+        # Memory check: Warn if total RAM is below 16GB
+        import psutil
+        total_memory_gb = psutil.virtual_memory().total / (1024**3)
+        available_memory_gb = psutil.virtual_memory().available / (1024**3)
+        if total_memory_gb < 16:
+            print(f"Warning: System has only {total_memory_gb:.1f}GB RAM. Modin may fail on large datasets.")
+        if available_memory_gb < 4:
+            print(f"Warning: Only {available_memory_gb:.1f}GB available memory. Reducing Modin workers.")
+        
+        # Keep Dask/Modin quiet
+        import logging
+        logging.getLogger("distributed").setLevel(logging.ERROR)
+        logging.getLogger("distributed.worker").setLevel(logging.ERROR)
+        logging.getLogger("distributed.scheduler").setLevel(logging.ERROR)
+        logging.getLogger("distributed.client").setLevel(logging.ERROR)
+        logging.getLogger("tornado").setLevel(logging.ERROR)
+        logging.getLogger("bokeh").setLevel(logging.ERROR)
+
+        warnings.filterwarnings("ignore", category=UserWarning, module=".*modin.*")
+        warnings.filterwarnings("ignore", category=FutureWarning, module=".*dask.*")
+
+        import modin.config as cfg
+        cfg.Engine.put("dask")
+        cfg.StorageFormat.put("pandas")
+
+        from dask import config as dask_config
+        from dask.distributed import LocalCluster, Client
+        
+        # Memory-optimized configuration for 16GB systems
+        logical_cores = psutil.cpu_count(logical=True) or 4
+        
+        # Limit workers to prevent over-allocation; use fewer on low-memory systems for more memory per worker
+        max_workers = min(logical_cores, max(1, int(available_memory_gb / 4)))  # At least 4GB per worker
+        n_workers = min(logical_cores, max_workers)
+        
+        # Allocate memory per worker based on available RAM, using 80% for better performance
+        memory_per_worker_gb = available_memory_gb * 0.8 / n_workers  # Use 80% of available for workers
+        
+        dask_config.set({
+            "distributed.worker.daemon": False,
+            "distributed.comm.timeouts.connect": "10s",
+            "distributed.comm.timeouts.tcp": "10s",
+            "distributed.worker.memory.target": 0.8,  # Target 80% of worker memory
+            "distributed.worker.memory.spill": 0.9,   # Spill to disk at 90%
+            "distributed.worker.memory.pause": 0.95,  # Pause at 95%
+            "distributed.worker.memory.terminate": 0.98,  # Terminate at 98%
+            "dataframe.shuffle.method": "tasks",
+            "array.chunk-size": "128MB",  # Larger chunks for better throughput
+        })
+        
+        # Create a memory-limited cluster
+        cluster = LocalCluster(
+            n_workers=n_workers,
+            threads_per_worker=1,
+            processes=False,  # Use threads on Windows for stability
+            memory_limit=f"{memory_per_worker_gb:.1f}GB",
+            silence_logs=logging.CRITICAL,
+        )
+        
+        # Set the client globally for Modin to use
+        client = Client(cluster)
+        globals()['_dask_client'] = client
+        print(f"Dask cluster configured: {n_workers} workers, {memory_per_worker_gb:.1f}GB per worker")
+        
+    except Exception as e:
+        print(f"Warning: Modin setup failed: {e}")
+
+def cleanup_modin():
+    """Clean up Modin and Dask resources."""
+    try:
+        # Close our custom client first
+        if '_dask_client' in globals():
+            try:
+                globals()['_dask_client'].close()
+                print("Custom Dask client closed")
+            except Exception:
+                pass
+        
+        # Then try default cleanup
+        try:
+            import distributed
+            if hasattr(distributed, "default_client"):
+                try:
+                    client = distributed.default_client()
+                    client.close()
+                    print("Default Dask client closed")
+                except (ValueError, RuntimeError):
+                    pass
+        except ImportError:
+            pass
+    except Exception as e:
+        print(f"Warning: Modin cleanup failed: {e}")
+
+
+def run_operation(library, operation_name, operation_func):
+    """Run a single operation for a library with timing and error handling."""
+    try:
+        if library == "fireducks" and not FIREDUCKS_AVAILABLE:
+            print(f"  Running {operation_name} with {library}...")
+            print(f"    ✗ skipped: FireDucks not available")
+            return None, None
+        
+        print(f"  Running {operation_name} with {library}...")
+        start_time = time.time()
+        
+        # Enhanced handling for Modin
+        if library == "modin":
+            import gc
+            gc.collect()  # Clean up before operation
+            
+            try:
+                with redirect_stdout(open(os.devnull, 'w')), redirect_stderr(open(os.devnull, 'w')):
+                    result = operation_func()
+            except Exception as modin_err:
+                print(f"    ✗ error: {modin_err}")
+                # Force garbage collection and retry
+                gc.collect()
+                
+                # Try with a single-worker fallback for memory-intensive operations
+                if "memory" in str(modin_err).lower() or "cancelled" in str(modin_err).lower() or "no valid workers" in str(modin_err).lower():
+                    try:
+                        from dask.distributed import LocalCluster, Client
+                        fallback_cluster = LocalCluster(
+                            n_workers=1,
+                            threads_per_worker=4,
+                            processes=False,
+                            memory_limit="12GB",
+                            silence_logs=logging.CRITICAL,
+                        )
+                        with Client(fallback_cluster):
+                            with redirect_stdout(open(os.devnull, 'w')), redirect_stderr(open(os.devnull, 'w')):
+                                result = operation_func()
+                        print(f"    ✓ Completed with fallback in {time.time() - start_time:.2f}s, shape: {getattr(result, 'shape', 'N/A')}")
+                        return time.time() - start_time, result
+                    except Exception as fallback_err:
+                        print(f"    ✗ Fallback failed: {fallback_err}")
+                        return None, None
+                else:
+                    with redirect_stdout(open(os.devnull, 'w')), redirect_stderr(open(os.devnull, 'w')):
+                        result = operation_func()
+                        
+            # Clean up after Modin operation
+            gc.collect()
+        else:
+            result = operation_func()
+        
+        duration = time.time() - start_time
+        shape = getattr(result, 'shape', 'N/A')
+        print(f"    ✓ Completed in {duration:.2f}s, shape: {shape}")
+        return duration, result
+    except Exception as e:
+        print(f"    ✗ error: {e}")
+        return None, None
+
+
+def run_benchmarks():
+    """Run all benchmarks for available libraries and operations."""
+    libraries = ['pandas', 'polars', 'modin', 'duckdb']
+    operations = ['filter_group', 'stats', 'complex_join', 'timeseries']
+    
+    results = {}
+    for operation in operations:
+        print(f"  Running {operation} with all libraries...")
+        results[operation] = {}
+        for library in libraries:
+            func_name = f"{library}_{operation}"
+            if func_name in globals():
+                duration, _ = run_operation(library, operation, globals()[func_name])
+                results[operation][library] = duration
+            else:
+                print(f"    Warning: {func_name} not found, skipping.")
+                results[operation][library] = None
+    
+    return results
+
+
 def main():
     """Main function with unified CLI parameters (-d/--dataset, -o/--output)."""
     parser = argparse.ArgumentParser(description="Modular Data Processing Benchmark")
@@ -653,15 +866,23 @@ def main():
     print("="*70)
 
     try:
+        setup_modin()  # Initialize Modin before running benchmarks
         benchmark = ModularBenchmark(dataset_path=args.dataset)
-
+        
         print(f"📁 Dataset: {benchmark.dataset_path}")
         print(f"📊 Records: {benchmark.dataset_size:,}")
         print(f"🔧 Available libraries: {[lib for lib, avail in benchmark.available_libraries.items() if avail]}")
         print()
 
-        results = benchmark.run_all_benchmarks()
+        # Memory check before starting
+        import psutil
+        available_memory_gb = psutil.virtual_memory().available / (1024**3)
+        if available_memory_gb < 8:
+            print(f"Warning: Only {available_memory_gb:.1f}GB available memory. Benchmark may fail.")
 
+        # Run benchmarks
+        results = benchmark.run_all_benchmarks()
+        
         # Decide output path
         output_override = args.output
         benchmark.save_results(results, filename=output_override)
@@ -673,6 +894,8 @@ def main():
         print(f"❌ Benchmark failed: {e}")
         import traceback
         traceback.print_exc()
+    finally:
+        cleanup_modin()  # Ensure cleanup on exit
 
 
 if __name__ == "__main__":

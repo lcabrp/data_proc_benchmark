@@ -15,6 +15,7 @@ from contextlib import redirect_stderr, redirect_stdout
 from typing import cast, Optional, Iterable
 from pathlib import Path
 import numpy as np
+import psutil
 
 # Suppress noisy SyntaxWarnings (e.g. invalid escape sequence '\_')
 warnings.filterwarnings("ignore", category=SyntaxWarning, message=r"invalid escape sequence \\_")
@@ -48,8 +49,16 @@ if platform.system() in ["Linux", "Darwin"]:
 
 
 def setup_modin() -> None:
-    """Initialize Modin with quiet, stable Dask configuration."""
+    """Initialize Modin with memory-optimized Dask configuration for Windows."""
     try:
+        # Memory check: Warn if total RAM is below 16GB
+        total_memory_gb = psutil.virtual_memory().total / (1024**3)
+        available_memory_gb = psutil.virtual_memory().available / (1024**3)
+        if total_memory_gb < 16:
+            print(f"Warning: System has only {total_memory_gb:.1f}GB RAM. Modin may fail on large datasets.")
+        if available_memory_gb < 4:
+            print(f"Warning: Only {available_memory_gb:.1f}GB available memory. Reducing Modin workers.")
+        
         # Keep Dask/Modin quiet
         logging.getLogger("distributed").setLevel(logging.ERROR)
         logging.getLogger("distributed.worker").setLevel(logging.ERROR)
@@ -61,17 +70,50 @@ def setup_modin() -> None:
         warnings.filterwarnings("ignore", category=UserWarning, module=".*modin.*")
         warnings.filterwarnings("ignore", category=FutureWarning, module=".*dask.*")
 
-        import modin.config as cfg  # type: ignore
+        import modin.config as cfg
         cfg.Engine.put("dask")
         cfg.StorageFormat.put("pandas")
 
-        from dask import config as dask_config  # type: ignore
+        from dask import config as dask_config
+        from dask.distributed import LocalCluster, Client
+        
+        # Memory-optimized configuration for 16GB systems
+        logical_cores = psutil.cpu_count(logical=True) or 4
+        
+        # Limit workers to prevent over-allocation; use fewer on low-memory systems
+        # Aim for at least 3GB per worker to reduce spilling
+        max_workers = min(logical_cores, max(1, int(available_memory_gb / 3.5)))  # At least 3.5GB per worker
+        n_workers = min(logical_cores, max_workers)
+        
+        # Allocate memory per worker based on available RAM, using 75% for better performance
+        memory_per_worker_gb = available_memory_gb * 0.75 / n_workers  # Use 75% of available for workers
+        
         dask_config.set({
             "distributed.worker.daemon": False,
-            "distributed.comm.timeouts.connect": "5s",
-            # Keep partitions modest to reduce graph size
+            "distributed.comm.timeouts.connect": "10s",
+            "distributed.comm.timeouts.tcp": "10s",
+            "distributed.worker.memory.target": 0.8,  # Target 80% of worker memory
+            "distributed.worker.memory.spill": 0.9,   # Spill to disk at 90%
+            "distributed.worker.memory.pause": 0.95,  # Pause at 95%
+            "distributed.worker.memory.terminate": 0.98,  # Terminate at 98%
             "dataframe.shuffle.method": "tasks",
+            "array.chunk-size": "128MB",  # Slightly larger chunks for better throughput
         })
+        
+        # Create a memory-limited cluster
+        cluster = LocalCluster(
+            n_workers=n_workers,
+            threads_per_worker=1,
+            processes=False,  # Use threads on Windows for stability
+            memory_limit=f"{memory_per_worker_gb:.1f}GB",
+            silence_logs=logging.CRITICAL,
+        )
+        
+        # Set the client globally for Modin to use
+        client = Client(cluster)
+        globals()['_dask_client'] = client
+        print(f"Dask cluster configured: {n_workers} workers, {memory_per_worker_gb:.1f}GB per worker")
+        
     except Exception as e:
         print(f"Warning: Modin setup failed: {e}")
 
@@ -79,13 +121,22 @@ def setup_modin() -> None:
 def cleanup_modin() -> None:
     """Clean up Modin and Dask resources."""
     try:
+        # Close our custom client first
+        if '_dask_client' in globals():
+            try:
+                globals()['_dask_client'].close()
+                print("Custom Dask client closed")
+            except Exception:
+                pass
+        
+        # Then try default cleanup
         try:
-            import distributed  # type: ignore
+            import distributed
             if hasattr(distributed, "default_client"):
                 try:
                     client = distributed.default_client()
                     client.close()
-                    print("Dask client closed")
+                    print("Default Dask client closed")
                 except (ValueError, RuntimeError):
                     pass
         except ImportError:
@@ -593,16 +644,45 @@ def run_benchmark_operation(library_name, operation_func, operation_name):
 
         start = time.time()
         if library_name.lower() == "modin":
+            # Enhanced memory management for Modin operations
+            import gc
+            gc.collect()  # Clean up before operation
+            
             try:
                 with redirect_stdout(open(os.devnull, "w")), redirect_stderr(open(os.devnull, "w")):
                     result = operation_func()
             except Exception as modin_err:
-                # Retry once; transient Dask cancellations sometimes resolve on retry
-                print(f"Modin {operation_name} encountered an error, retrying once: {modin_err}")
-                with redirect_stdout(open(os.devnull, "w")), redirect_stderr(open(os.devnull, "w")):
-                    result = operation_func()
+                print(f"Modin {operation_name} encountered an error, retrying with fallback: {modin_err}")
+                # Force garbage collection and retry
+                gc.collect()
+                
+                # Try with a single-worker fallback for memory-intensive operations
+                if "memory" in str(modin_err).lower() or "cancelled" in str(modin_err).lower():
+                    try:
+                        from dask.distributed import LocalCluster, Client
+                        fallback_cluster = LocalCluster(
+                            n_workers=1,
+                            threads_per_worker=4,
+                            processes=False,
+                            memory_limit="12GB",
+                            silence_logs=logging.CRITICAL,
+                        )
+                        with Client(fallback_cluster):
+                            with redirect_stdout(open(os.devnull, "w")), redirect_stderr(open(os.devnull, "w")):
+                                result = operation_func()
+                    except Exception:
+                        # Final fallback: just retry once more
+                        with redirect_stdout(open(os.devnull, "w")), redirect_stderr(open(os.devnull, "w")):
+                            result = operation_func()
+                else:
+                    with redirect_stdout(open(os.devnull, "w")), redirect_stderr(open(os.devnull, "w")):
+                        result = operation_func()
+                        
+            # Clean up after Modin operation
+            gc.collect()
         else:
             result = operation_func()
+            
         duration = time.time() - start
         print(f"{library_name} {operation_name} duration: {duration:.2f}s")
         return duration, result
@@ -691,6 +771,11 @@ if __name__ == "__main__":
         setup_modin()
         pd.set_option("display.float_format", "{:.0f}".format)
 
+        # Memory check before starting
+        available_memory_gb = psutil.virtual_memory().available / (1024**3)
+        if available_memory_gb < 8:
+            print(f"Warning: Only {available_memory_gb:.1f}GB available memory. Benchmark may fail.")
+
         # Collect host information
         print("Collecting host information...")
         host_info = get_host_info()
@@ -748,4 +833,5 @@ if __name__ == "__main__":
         cleanup_modin()
     except Exception as e:
         print(f"Critical error in main: {e}")
+        cleanup_modin()  # Ensure cleanup even on error
         sys.exit(1)
