@@ -6,7 +6,6 @@ import sqlite3
 import numpy as np
 from typing import Union, Optional, Dict, List
 import numbers
-import modin.pandas as mpd
 
 # Helper to convert GPU-accelerated (cuDF/cudf.pandas) DataFrame slices to plain pandas
 # so that plotting libraries (seaborn/plotly) that expect CPU/NumPy arrays work reliably.
@@ -401,10 +400,7 @@ def get_safe_int_type(series: pd.Series) -> str:
         else:
             return 'int64'
 
-def optimize_df_types(
-    df: Union[pd.DataFrame, mpd.DataFrame], 
-    df_types: dict
-) -> Union[pd.DataFrame, mpd.DataFrame]:
+def optimize_df_types( df: pd.DataFrame, df_types: dict) -> pd.DataFrame:
     """
     Optimize memory usage of DataFrame based on provided types.
     Works with both pandas and Modin DataFrames.

@@ -1,24 +1,17 @@
 """Original Comprehensive Data Processing Benchmark (with CLI dataset override)."""
+import gc
 import time
 import pandas as pd
-import modin.pandas as mpd
 import polars as pl
 import duckdb
 import platform
-import logging
-import warnings
 import sys
-import os
 import csv
 import argparse
+import os
 from contextlib import redirect_stderr, redirect_stdout
-from typing import cast, Optional, Iterable
+from typing import cast, Optional
 from pathlib import Path
-import numpy as np
-import psutil
-
-# Suppress noisy SyntaxWarnings (e.g. invalid escape sequence '\_')
-warnings.filterwarnings("ignore", category=SyntaxWarning, message=r"invalid escape sequence \\_")
 
 # Add the project root to Python path for utils import
 project_root = Path(__file__).resolve().parents[2]
@@ -28,6 +21,7 @@ sys.path.insert(0, str(project_root))
 from utils.config import setup_project
 from utils.data_io import read_data, find_dataset, get_dataset_size
 from utils.host_info import get_host_info
+from utils.useful_functions import optimize_df_types
 
 # Use the reusable configuration
 config = setup_project()
@@ -47,155 +41,492 @@ if platform.system() in ["Linux", "Darwin"]:
     except ImportError:
         pass
 
+# Benchmark dataset optimization types (centralized configuration)
+BENCHMARK_OPTIMIZATION_TYPES = {
+    'datetime64[ns]': ['timestamp'],
+    'category': ['source_ip', 'destination_ip', 'protocol', 'event_type', 
+                'severity', 'user', 'status_code', 'country', 'device_type'],
+    'uint32': ['bytes', 'session_id', 'port'],
+    'uint16': ['response_time_ms'],
+    'float32': ['risk_score'] 
+}
 
-def setup_modin() -> None:
-    """Initialize Modin with memory-optimized Dask configuration for Windows."""
+# Current data cache - only holds one library's data at a time
+_current_library_data = None
+_current_library_name = None
+
+def load_and_optimize_for_library(library: str):
+    """
+    Load and optimize data for a specific library, clearing any previous data.
+    This ensures only one library's data is in memory at a time.
+    
+    Args:
+        library: The library name ('pandas', 'polars', 'duckdb', 'fireducks')
+        
+    Returns:
+        Optimized DataFrame in the format expected by the library
+    """
+    global _current_library_data, _current_library_name, DATASET_PATH
+    
+    # Clear previous data to free memory
+    if _current_library_data is not None:
+        del _current_library_data
+        _current_library_data = None
+        _current_library_name = None
+    
+    if DATASET_PATH is None:
+        raise RuntimeError("DATASET_PATH is not set")
+    
+    print(f"\nLoading and optimizing data for {library}...")
+    
     try:
-        # Memory check: Warn if total RAM is below 16GB
-        total_memory_gb = psutil.virtual_memory().total / (1024**3)
-        available_memory_gb = psutil.virtual_memory().available / (1024**3)
-        if total_memory_gb < 16:
-            print(f"Warning: System has only {total_memory_gb:.1f}GB RAM. Modin may fail on large datasets.")
-        if available_memory_gb < 4:
-            print(f"Warning: Only {available_memory_gb:.1f}GB available memory. Reducing Modin workers.")
+        # Read the data using existing utility function
+        df = read_data(cast(Path, DATASET_PATH), library=library)
         
-        # Keep Dask/Modin quiet
-        logging.getLogger("distributed").setLevel(logging.ERROR)
-        logging.getLogger("distributed.worker").setLevel(logging.ERROR)
-        logging.getLogger("distributed.scheduler").setLevel(logging.ERROR)
-        logging.getLogger("distributed.client").setLevel(logging.ERROR)
-        logging.getLogger("tornado").setLevel(logging.ERROR)
-        logging.getLogger("bokeh").setLevel(logging.ERROR)
-
-        warnings.filterwarnings("ignore", category=UserWarning, module=".*modin.*")
-        warnings.filterwarnings("ignore", category=FutureWarning, module=".*dask.*")
-
-        import modin.config as cfg
-        cfg.Engine.put("dask")
-        cfg.StorageFormat.put("pandas")
-
-        from dask import config as dask_config
-        from dask.distributed import LocalCluster, Client
+        if df is None:
+            print(f"  Warning: Failed to load data for {library}")
+            return None
         
-        # Memory-optimized configuration for 16GB systems
-        logical_cores = psutil.cpu_count(logical=True) or 4
+        # Apply optimization only for pandas-based libraries (pandas, fireducks)
+        if library in ["pandas", "fireducks"] and df is not None:
+            original_memory = df.memory_usage(deep=True).sum()
+            
+            # Use existing optimize_df_types function - DRY principle!
+            optimized_df = optimize_df_types(df, BENCHMARK_OPTIMIZATION_TYPES)
+            
+            # Calculate and report memory savings
+            optimized_memory = optimized_df.memory_usage(deep=True).sum()
+            memory_reduction = (original_memory - optimized_memory) / original_memory * 100
+            
+            if memory_reduction > 1:
+                print(f"  {library} DataFrame optimized: {memory_reduction:.1f}% memory reduction "
+                      f"({original_memory/1024/1024:.1f}MB → {optimized_memory/1024/1024:.1f}MB)")
+            
+            df = optimized_df
         
-        # Limit workers to prevent over-allocation; use fewer on low-memory systems
-        # Aim for at least 3GB per worker to reduce spilling
-        max_workers = min(logical_cores, max(1, int(available_memory_gb / 3.5)))  # At least 3.5GB per worker
-        n_workers = min(logical_cores, max_workers)
+        # Cache the current library's data
+        _current_library_data = df
+        _current_library_name = library
+        print(f"  {library} data loaded and ready for benchmarking")
         
-        # Allocate memory per worker based on available RAM, using 75% for better performance
-        memory_per_worker_gb = available_memory_gb * 0.75 / n_workers  # Use 75% of available for workers
-        
-        dask_config.set({
-            "distributed.worker.daemon": False,
-            "distributed.comm.timeouts.connect": "10s",
-            "distributed.comm.timeouts.tcp": "10s",
-            "distributed.worker.memory.target": 0.8,  # Target 80% of worker memory
-            "distributed.worker.memory.spill": 0.9,   # Spill to disk at 90%
-            "distributed.worker.memory.pause": 0.95,  # Pause at 95%
-            "distributed.worker.memory.terminate": 0.98,  # Terminate at 98%
-            "dataframe.shuffle.method": "tasks",
-            "array.chunk-size": "128MB",  # Slightly larger chunks for better throughput
-        })
-        
-        # Create a memory-limited cluster
-        cluster = LocalCluster(
-            n_workers=n_workers,
-            threads_per_worker=1,
-            processes=False,  # Use threads on Windows for stability
-            memory_limit=f"{memory_per_worker_gb:.1f}GB",
-            silence_logs=logging.CRITICAL,
-        )
-        
-        # Set the client globally for Modin to use
-        client = Client(cluster)
-        globals()['_dask_client'] = client
-        print(f"Dask cluster configured: {n_workers} workers, {memory_per_worker_gb:.1f}GB per worker")
+        return df
         
     except Exception as e:
-        print(f"Warning: Modin setup failed: {e}")
+        print(f"  Error loading/optimizing data for {library}: {e}")
+        return None
 
+def get_current_data():
+    """Get the currently loaded library's data."""
+    return _current_library_data
 
-def cleanup_modin() -> None:
-    """Clean up Modin and Dask resources."""
+def get_memory_usage():
+    """Get current memory usage in GB."""
     try:
-        # Close our custom client first
-        if '_dask_client' in globals():
+        import psutil
+        process = psutil.Process()
+        return process.memory_info().rss / 1024 / 1024 / 1024  # GB
+    except:
+        return 0.0
+
+def clear_current_data():
+    """Clear the current data to free memory with realistic expectations."""
+    global _current_library_data, _current_library_name
+    
+    if _current_library_data is not None:
+        # Get memory usage before cleanup (for reporting)
+        if hasattr(_current_library_data, 'memory_usage'):
             try:
-                globals()['_dask_client'].close()
-                print("Custom Dask client closed")
-            except Exception:
-                pass
+                memory_before = _current_library_data.memory_usage(deep=True).sum()
+                print(f"    Releasing {memory_before/1024/1024:.1f}MB of {_current_library_name} data")
+            except:
+                print(f"    Releasing {_current_library_name} data from memory")
+        else:
+            print(f"    Releasing {_current_library_name} data from memory")
         
-        # Then try default cleanup
-        try:
-            import distributed
-            if hasattr(distributed, "default_client"):
-                try:
-                    client = distributed.default_client()
-                    client.close()
-                    print("Default Dask client closed")
-                except (ValueError, RuntimeError):
-                    pass
-        except ImportError:
-            pass
-    except Exception as e:
-        print(f"Warning: Modin cleanup failed: {e}")
+        # Explicit deletion
+        del _current_library_data
+        _current_library_data = None
+        _current_library_name = None
+        
+        # Single garbage collection pass (being realistic about what GC can do)
+        gc.collect()
+        
+        # Brief delay for cleanup
+        time.sleep(0.2)
 
+# Helper function to find first present column
+def _first_present(cols, candidates):
+    """Return the first column from candidates that exists in cols."""
+    for candidate in candidates:
+        if candidate in cols:
+            return candidate
+    return None
 
-# Helpers
-
-def _detect_file_format(path: Path) -> str:
-    """Detect file format by extension, aware of compressed endings."""
-    suffixes = [s.lower() for s in path.suffixes]
-    comp = {".gz", ".zip", ".zst", ".bz2"}
-    base_suffixes = [s for s in suffixes if s not in comp]
-    ext = (base_suffixes[-1] if base_suffixes else path.suffix).lower()
-    if ext == ".parquet":
-        return "parquet"
-    if ext in {".ndjson", ".jsonl"}:
-        return "ndjson"
-    if ext == ".json":
-        return "json"
-    return "csv"
-
-
+# Helper functions for DuckDB
 def _duckdb_table_expr(path: Path) -> str:
-    """Return a DuckDB table expression for the given dataset path based on format."""
-    fmt = _detect_file_format(path)
-    # DuckDB likes forward slashes even on Windows
-    p = str(path).replace("\\", "/")
-    if fmt == "parquet":
-        return f"read_parquet('{p}')"
-    if fmt in ("json", "ndjson"):
-        return f"read_json_auto('{p}')"
-    return f"read_csv_auto('{p}')"
+    """Generate DuckDB table expression for file."""
+    if path.suffix.lower() == '.parquet':
+        return f"'{path}'"
+    elif path.suffix.lower() == '.csv':
+        return f"read_csv_auto('{path}')"
+    else:
+        return f"'{path}'"
 
-
-def _get_columns_duckdb(path: Path) -> set[str]:
-    """Fast schema detection via DuckDB (zero-row scan)."""
+def _get_columns_duckdb(path: Path) -> set:
+    """Get column names from file using DuckDB."""
     conn = duckdb.connect()
     try:
         expr = _duckdb_table_expr(path)
-        df = conn.execute(f"SELECT * FROM {expr} LIMIT 0").fetchdf()
-        return set(df.columns)
+        result = conn.execute(f"SELECT * FROM {expr} LIMIT 1").fetchdf()
+        return set(result.columns)
+    except Exception:
+        return set()
     finally:
         conn.close()
 
+# STANDARDIZED BENCHMARK OPERATIONS
+# Each operation performs the exact same logical steps across all libraries
 
-def _first_present(columns: Iterable[str], candidates: Iterable[str]) -> Optional[str]:
-    """Return the first candidate present in columns."""
-    cols = set(c.lower() for c in columns)
-    for c in candidates:
-        if c.lower() in cols:
-            return c
-    return None
+# Operation 1: Filter and Group
+# Task: Filter rows where bytes > 1000, then group by event_type and count rows
+def pandas_filter_group():
+    df = get_current_data()
+    if df is None:
+        return None
+    # Standardized operation: filter bytes > 1000, group by event_type, count
+    if 'bytes' not in df.columns or 'event_type' not in df.columns:
+        return None
+    filtered = df[df['bytes'] > 1000]
+    return filtered.groupby('event_type').size().reset_index(name='count')
 
+def polars_filter_group():
+    df = get_current_data()
+    if df is None:
+        return None
+    # Exact same operation as pandas
+    if 'bytes' not in df.columns or 'event_type' not in df.columns:
+        return None
+    return (df
+            .filter(pl.col('bytes') > 1000)
+            .group_by('event_type')
+            .len()
+            .rename({'len': 'count'}))
 
-# Results writer
+def duckdb_filter_group():
+    conn = duckdb.connect()
+    try:
+        path = cast(Path, DATASET_PATH)
+        expr = _duckdb_table_expr(path)
+        # Exact same operation as pandas/polars
+        return conn.execute(f"""
+            SELECT event_type, COUNT(*) as count
+            FROM {expr}
+            WHERE bytes > 1000
+            GROUP BY event_type
+        """).fetchdf()
+    finally:
+        conn.close()
 
+def fireducks_filter_group():
+    if not FIREDUCKS_AVAILABLE:
+        return None
+    df = get_current_data()
+    if df is None:
+        return None
+    # Exact same operation as pandas
+    if 'bytes' not in df.columns or 'event_type' not in df.columns:
+        return None
+    filtered = df[df['bytes'] > 1000]
+    return filtered.groupby('event_type').size().reset_index(name='count')
+
+# Operation 2: Statistical Analysis  
+# Task: Group by event_type and calculate mean, min, max for bytes, response_time_ms, risk_score
+def pandas_stats():
+    df = get_current_data()
+    if df is None:
+        return None
+    # Standardized columns for statistics
+    stat_cols = ['bytes', 'response_time_ms', 'risk_score']
+    available_cols = [col for col in stat_cols if col in df.columns and df[col].dtype.kind in 'biufc']
+    
+    if not available_cols or 'event_type' not in df.columns:
+        return None
+    
+    return df.groupby('event_type')[available_cols].agg(['mean', 'min', 'max']).reset_index()
+
+def polars_stats():
+    df = get_current_data()
+    if df is None:
+        return None
+    # Exact same operation as pandas
+    stat_cols = ['bytes', 'response_time_ms', 'risk_score']
+    available_cols = [col for col in stat_cols if col in df.columns]
+    
+    if not available_cols or 'event_type' not in df.columns:
+        return None
+    
+    aggs = []
+    for col in available_cols:
+        aggs.extend([
+            pl.col(col).mean().alias(f'{col}_mean'),
+            pl.col(col).min().alias(f'{col}_min'),
+            pl.col(col).max().alias(f'{col}_max')
+        ])
+    
+    return df.group_by('event_type').agg(aggs)
+
+def duckdb_stats():
+    conn = duckdb.connect()
+    try:
+        path = cast(Path, DATASET_PATH)
+        expr = _duckdb_table_expr(path)
+        # Exact same operation as pandas/polars
+        return conn.execute(f"""
+            SELECT 
+                event_type,
+                AVG(bytes) as bytes_mean, MIN(bytes) as bytes_min, MAX(bytes) as bytes_max,
+                AVG(response_time_ms) as response_time_ms_mean, MIN(response_time_ms) as response_time_ms_min, MAX(response_time_ms) as response_time_ms_max,
+                AVG(risk_score) as risk_score_mean, MIN(risk_score) as risk_score_min, MAX(risk_score) as risk_score_max
+            FROM {expr}
+            GROUP BY event_type
+        """).fetchdf()
+    finally:
+        conn.close()
+
+def fireducks_stats():
+    if not FIREDUCKS_AVAILABLE:
+        return None
+    df = get_current_data()
+    if df is None:
+        return None
+    # Exact same operation as pandas
+    stat_cols = ['bytes', 'response_time_ms', 'risk_score']
+    available_cols = [col for col in stat_cols if col in df.columns and df[col].dtype.kind in 'biufc']
+    
+    if not available_cols or 'event_type' not in df.columns:
+        return None
+    
+    return df.groupby('event_type')[available_cols].agg(['mean', 'min', 'max']).reset_index()
+
+# Operation 3: Complex Join and Window Functions
+# Task: Join with aggregated data and rank by total bytes per source_ip
+def pandas_complex():
+    df = get_current_data()
+    if df is None:
+        return None
+    
+    if 'source_ip' not in df.columns or 'bytes' not in df.columns:
+        return None
+    
+    # Step 1: Create summary by source_ip
+    summary = df.groupby('source_ip')['bytes'].sum().reset_index()
+    summary.rename(columns={'bytes': 'total_bytes'}, inplace=True)
+    
+    # Step 2: Join back to original data
+    result = df.merge(summary, on='source_ip')
+    
+    # Step 3: Add rank by total_bytes (descending)
+    result['bytes_rank'] = result['total_bytes'].rank(method='dense', ascending=False)
+    
+    # Step 4: Return top 10 ranks only
+    return result[result['bytes_rank'] <= 10].sort_values('bytes_rank')
+
+def polars_complex():
+    df = get_current_data()
+    if df is None:
+        return None
+    
+    if 'source_ip' not in df.columns or 'bytes' not in df.columns:
+        return None
+    
+    # Exact same operation as pandas
+    summary = (df
+               .group_by('source_ip')
+               .agg(pl.col('bytes').sum().alias('total_bytes')))
+    
+    result = (df
+              .join(summary, on='source_ip')
+              .with_columns(
+                  pl.col('total_bytes').rank(method='dense', descending=True).alias('bytes_rank')
+              )
+              .filter(pl.col('bytes_rank') <= 10)
+              .sort('bytes_rank'))
+    
+    return result
+
+def duckdb_complex():
+    conn = duckdb.connect()
+    try:
+        path = cast(Path, DATASET_PATH)
+        expr = _duckdb_table_expr(path)
+        # Exact same operation as pandas/polars
+        return conn.execute(f"""
+            WITH summary AS (
+                SELECT source_ip, SUM(bytes) as total_bytes
+                FROM {expr}
+                GROUP BY source_ip
+            ), joined AS (
+                SELECT d.*, s.total_bytes,
+                       DENSE_RANK() OVER (ORDER BY s.total_bytes DESC) as bytes_rank
+                FROM {expr} d
+                JOIN summary s ON d.source_ip = s.source_ip
+            )
+            SELECT * FROM joined 
+            WHERE bytes_rank <= 10
+            ORDER BY bytes_rank
+        """).fetchdf()
+    finally:
+        conn.close()
+
+def fireducks_complex():
+    if not FIREDUCKS_AVAILABLE:
+        return None
+    df = get_current_data()
+    if df is None:
+        return None
+    
+    if 'source_ip' not in df.columns or 'bytes' not in df.columns:
+        return None
+    
+    # Exact same operation as pandas
+    summary = df.groupby('source_ip')['bytes'].sum().reset_index()
+    summary.rename(columns={'bytes': 'total_bytes'}, inplace=True)
+    
+    result = df.merge(summary, on='source_ip')
+    result['bytes_rank'] = result['total_bytes'].rank(method='dense', ascending=False)
+    
+    return result[result['bytes_rank'] <= 10].sort_values('bytes_rank')
+
+# Operation 4: Time Series Analysis
+# Task: Extract hour from timestamp, group by hour and event_type, count occurrences
+def pandas_timeseries():
+    df = get_current_data()
+    if df is None:
+        return None
+    
+    if 'timestamp' not in df.columns or 'event_type' not in df.columns:
+        return None
+    
+    df_copy = df.copy()  # Don't modify cached data
+    df_copy['timestamp'] = pd.to_datetime(df_copy['timestamp'], errors='coerce')
+    df_copy['hour'] = df_copy['timestamp'].dt.hour
+    
+    return df_copy.groupby(['hour', 'event_type']).size().reset_index(name='count')
+
+def polars_timeseries():
+    df = get_current_data()
+    if df is None:
+        return None
+    
+    if 'timestamp' not in df.columns or 'event_type' not in df.columns:
+        return None
+    
+    # Exact same operation as pandas
+    result = (df
+              .with_columns(
+                  pl.col('timestamp').str.strptime(pl.Datetime, strict=False).dt.hour().alias('hour')
+              )
+              .group_by(['hour', 'event_type'])
+              .len()
+              .rename({'len': 'count'}))
+    
+    return result
+
+def duckdb_timeseries():
+    conn = duckdb.connect()
+    try:
+        path = cast(Path, DATASET_PATH)
+        expr = _duckdb_table_expr(path)
+        # Exact same operation as pandas/polars
+        return conn.execute(f"""
+            SELECT 
+                DATE_PART('hour', CAST(timestamp AS TIMESTAMP)) as hour,
+                event_type,
+                COUNT(*) as count
+            FROM {expr}
+            GROUP BY hour, event_type
+            ORDER BY hour, event_type
+        """).fetchdf()
+    finally:
+        conn.close()
+
+def fireducks_timeseries():
+    if not FIREDUCKS_AVAILABLE:
+        return None
+    df = get_current_data()
+    if df is None:
+        return None
+    
+    if 'timestamp' not in df.columns or 'event_type' not in df.columns:
+        return None
+    
+    # Exact same operation as pandas
+    df_copy = df.copy()  # Don't modify cached data
+    df_copy['timestamp'] = pd.to_datetime(df_copy['timestamp'], errors='coerce')
+    df_copy['hour'] = df_copy['timestamp'].dt.hour
+    
+    return df_copy.groupby(['hour', 'event_type']).size().reset_index(name='count')
+
+# Benchmark execution
+def run_benchmark_operation(library_name, operation_func, operation_name):
+    """Run a single benchmark operation with timing and error handling."""
+    print(f"  {library_name} {operation_name}...", end=" ", flush=True)
+    start_time = time.perf_counter()
+    
+    try:
+        with redirect_stdout(open(os.devnull, 'w')), redirect_stderr(open(os.devnull, 'w')):
+            result = operation_func()
+        
+        end_time = time.perf_counter()
+        duration = end_time - start_time
+        
+        if result is None:
+            print(f"duration: N/A")
+            return None, None
+        else:
+            print(f"duration: {duration:.4f}s")
+            return duration, result
+            
+    except Exception as e:
+        end_time = time.perf_counter()
+        duration = end_time - start_time
+        print(f"ERROR after {duration:.4f}s: {str(e)[:100]}")
+        return None, None
+
+def run_library_benchmarks(library_name: str, operations: dict) -> dict:
+    """
+    Run all benchmark operations for a single library.
+    Load data → run operations → clear data for memory efficiency.
+    """
+    print(f"\n{'=' * 60}")
+    print(f"BENCHMARKING {library_name.upper()}")
+    print(f"{'=' * 60}")
+    
+    # Special case for DuckDB - it reads directly from file, no need to load in memory
+    if library_name != "duckdb":
+        data = load_and_optimize_for_library(library_name)
+        if data is None and library_name != "fireducks":  # fireducks returns None on Windows, that's OK
+            print(f"  Skipping {library_name} - failed to load data")
+            return {}
+    
+    # Run all operations for this library
+    library_results = {}
+    for operation_name, operation_func in operations.items():
+        duration, result = run_benchmark_operation(library_name, operation_func, operation_name)
+        library_results[operation_name] = duration
+        
+        # Clear operation results immediately to save memory
+        if result is not None:
+            del result
+    
+    # Clear data after each library (but don't expect miracles)
+    if library_name != "duckdb":
+        clear_current_data()
+        print(f"  {library_name} data references cleared")
+    
+    return library_results
+
+# CSV Results Writing
 def _write_one_results_csv(path: Path, results: dict, host_info: dict, script_name: str, dataset_size: int) -> None:
     """Write results to one CSV path, creating header if needed."""
     file_exists = path.exists()
@@ -208,20 +539,17 @@ def _write_one_results_csv(path: Path, results: dict, host_info: dict, script_na
                     "memory_total_gb", "memory_available_gb", "python_version", "python_implementation",
                     "cpu_brand", "cpu_arch",
                     "dataset_size", "dataset_name", "dataset_format",
-                    "filter_group_pandas_seconds", "filter_group_modin_seconds", "filter_group_polars_seconds",
+                    "filter_group_pandas_seconds", "filter_group_polars_seconds",
                     "filter_group_duckdb_seconds", "filter_group_fireducks_seconds",
-                    "statistics_pandas_seconds", "statistics_modin_seconds", "statistics_polars_seconds",
+                    "statistics_pandas_seconds", "statistics_polars_seconds",
                     "statistics_duckdb_seconds", "statistics_fireducks_seconds",
-                    "complex_join_pandas_seconds", "complex_join_modin_seconds", "complex_join_polars_seconds",
+                    "complex_join_pandas_seconds", "complex_join_polars_seconds",
                     "complex_join_duckdb_seconds", "complex_join_fireducks_seconds",
-                    "timeseries_pandas_seconds", "timeseries_modin_seconds", "timeseries_polars_seconds",
+                    "timeseries_pandas_seconds", "timeseries_polars_seconds",
                     "timeseries_duckdb_seconds", "timeseries_fireducks_seconds",
                     "script_name",
                 ]
                 writer.writerow(header)
-
-            def safe_value(v):
-                return np.nan if v is None else v
 
             # Derive dataset metadata
             try:
@@ -245,593 +573,194 @@ def _write_one_results_csv(path: Path, results: dict, host_info: dict, script_na
                 host_info.get("memory_total_gb"), host_info.get("memory_available_gb"), host_info.get("python_version"),
                 host_info.get("python_implementation"), host_info.get("cpu_brand"), host_info.get("cpu_arch"),
                 dataset_size, ds_name, ds_fmt,
-                safe_value(results.get("filter_group", {}).get("pandas")),
-                safe_value(results.get("filter_group", {}).get("modin")),
-                safe_value(results.get("filter_group", {}).get("polars")),
-                safe_value(results.get("filter_group", {}).get("duckdb")),
-                safe_value(results.get("filter_group", {}).get("fireducks")),
-                safe_value(results.get("statistics", {}).get("pandas")),
-                safe_value(results.get("statistics", {}).get("modin")),
-                safe_value(results.get("statistics", {}).get("polars")),
-                safe_value(results.get("statistics", {}).get("duckdb")),
-                safe_value(results.get("statistics", {}).get("fireducks")),
-                safe_value(results.get("complex_join", {}).get("pandas")),
-                safe_value(results.get("complex_join", {}).get("modin")),
-                safe_value(results.get("complex_join", {}).get("polars")),
-                safe_value(results.get("complex_join", {}).get("duckdb")),
-                safe_value(results.get("complex_join", {}).get("fireducks")),
-                safe_value(results.get("timeseries", {}).get("pandas")),
-                safe_value(results.get("timeseries", {}).get("modin")),
-                safe_value(results.get("timeseries", {}).get("polars")),
-                safe_value(results.get("timeseries", {}).get("duckdb")),
-                safe_value(results.get("timeseries", {}).get("fireducks")),
+                results.get("pandas", {}).get("filter_group"),
+                results.get("polars", {}).get("filter_group"),
+                results.get("duckdb", {}).get("filter_group"),
+                results.get("fireducks", {}).get("filter_group"),
+                results.get("pandas", {}).get("statistics"),
+                results.get("polars", {}).get("statistics"),
+                results.get("duckdb", {}).get("statistics"),
+                results.get("fireducks", {}).get("statistics"),
+                results.get("pandas", {}).get("complex_join"),
+                results.get("polars", {}).get("complex_join"),
+                results.get("duckdb", {}).get("complex_join"),
+                results.get("fireducks", {}).get("complex_join"),
+                results.get("pandas", {}).get("timeseries"),
+                results.get("polars", {}).get("timeseries"),
+                results.get("duckdb", {}).get("timeseries"),
+                results.get("fireducks", {}).get("timeseries"),
                 script_name,
             ]
             writer.writerow(row)
+
+def write_results_to_csv(results: dict, dataset_size: int) -> None:
+    """Write benchmark results to CSV file."""
+    host_info = get_host_info()
+    script_name = Path(__file__).name
+    _write_one_results_csv(RESULTS_CSV_PATH, results, host_info, script_name, dataset_size)
+    print(f"\nResults written to: {RESULTS_CSV_PATH}")
+
+# Main benchmark execution
+def main():
+    """Main function to run all benchmarks with realistic memory management."""
+    global DATASET_PATH, RESULTS_CSV_PATH
+
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description="Run comprehensive data processing benchmarks")
+    parser.add_argument("--dataset", "-d", type=Path, help="Path to dataset file (overrides default)")
+    parser.add_argument("--output", "-o", type=Path, help="Path to output CSV file (overrides default)")
+    args = parser.parse_args()
+
+    # Override paths if provided via CLI
+    if args.dataset:
+        DATASET_PATH = args.dataset
+        if not DATASET_PATH.exists():
+            print(f"Error: Dataset file not found: {DATASET_PATH}")
+            sys.exit(1)
+    else:
+        DATASET_PATH = find_dataset()
+        if not DATASET_PATH:
+            print("Error: No dataset found. Use --dataset to specify a file.")
+            sys.exit(1)
+
+    if args.output:
+        RESULTS_CSV_PATH = args.output
+        RESULTS_CSV_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+    print(f"Using dataset: {DATASET_PATH}")
+    print(f"Results will be written to: {RESULTS_CSV_PATH}")
     
+    initial_memory = get_memory_usage()
+    print(f"Initial memory usage: {initial_memory:.2f}GB")
 
-def save_results_to_csv(output_path: Path, results: dict, host_info: dict, script_name: str, dataset_size: int) -> None:
-    """Save benchmark results to a single CSV file."""
-    try:
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        _write_one_results_csv(output_path, results, host_info, script_name, dataset_size)
-        print(f"Results saved to {output_path}")
-    except Exception as e:
-        print(f"Error saving results to CSV: {e}")
+    # Get dataset size
+    dataset_size = get_dataset_size(DATASET_PATH)
+    print(f"Dataset size: {dataset_size:,} rows")
 
-
-# Operation 1: Filter and Group
-
-def pandas_filter_group():
-    df = read_data(cast(Path, DATASET_PATH), library="pandas")
-    cols = set(df.columns)
-    # Choose filter and group-by columns dynamically
-    status_col = _first_present(cols, ["status_code", "severity"])  # numeric or categorical
-    group_col = _first_present(cols, ["source_ip", "destination_ip", "event"]) or list(cols)[0]
-    if status_col in cols and df[status_col].dtype.kind in "biufc":
-        filtered = df[df[status_col] > (df[status_col].median() if df[status_col].size else 0)]
-    else:
-        filtered = df
-    agg_target = _first_present(cols, ["bytes", "port"]) or group_col
-    return filtered.groupby(group_col).agg({agg_target: "count"})
-
-
-def modin_filter_group():
-    try:
-        df = read_data(cast(Path, DATASET_PATH), library="modin")
-        cols = set(df.columns)
-        status_col = _first_present(cols, ["status_code", "severity"])  # numeric or categorical
-        group_col = _first_present(cols, ["source_ip", "destination_ip", "event"]) or list(cols)[0]
-        if status_col in cols:
-            try:
-                filtered = df[df[status_col] > df[status_col].median()] if df[status_col].dtype.kind in "biufc" else df
-            except Exception:
-                filtered = df
-        else:
-            filtered = df
-        agg_target = _first_present(cols, ["bytes", "port"]) or group_col
-        return filtered.groupby(group_col).agg({agg_target: "count"})
-    except Exception as e:
-        print(f"Warning: Modin filter_group failed: {e}")
-        raise
-
-
-def polars_filter_group():
-    df = read_data(cast(Path, DATASET_PATH), library="polars")
-    cols = set(df.columns)
-    status_col = _first_present(cols, ["status_code", "severity"])  # may not exist
-    group_col = _first_present(cols, ["source_ip", "destination_ip", "event"]) or list(cols)[0]
-    expr = df
-    if status_col and status_col in cols:
-        # If numeric, filter by > median; else skip filter
-        try:
-            expr = expr.filter(pl.col(status_col).is_not_null())
-        except Exception:
-            pass
-    agg_target = _first_present(cols, ["bytes", "port"]) or group_col
-    return expr.group_by(group_col).agg(pl.col(agg_target).count().alias("count"))
-
-
-def duckdb_filter_group():
-    conn = duckdb.connect()
-    path = cast(Path, DATASET_PATH)
-    expr = _duckdb_table_expr(path)
-    cols = _get_columns_duckdb(path)
-    group_col = _first_present(cols, ["source_ip", "destination_ip", "event"]) or next(iter(cols))
-    agg_target = _first_present(cols, ["bytes", "port"]) or group_col
-    # Optional filter if a numeric status-like column exists
-    status_col = _first_present(cols, ["status_code", "severity"]) or ""
-    where_clause = f"WHERE {status_col} IS NOT NULL" if status_col in cols else ""
-    return conn.execute(
-        f"""
-        SELECT {group_col} as key, COUNT({agg_target}) as cnt
-        FROM {expr}
-        {where_clause}
-        GROUP BY {group_col}
-        """
-    ).fetchdf()
-
-
-def fireducks_filter_group():
-    if not FIREDUCKS_AVAILABLE:
-        return None
-    df = read_data(cast(Path, DATASET_PATH), library="pandas")
-    return df[df["status_code"] == 200].groupby("source_ip").agg({"bytes": "sum"})
-
-
-# Operation 2: Statistical Analysis
-
-def pandas_stats():
-    df = read_data(cast(Path, DATASET_PATH), library="pandas")
-    cols = set(df.columns)
-    by = _first_present(cols, ["event_type", "event", "source_ip"]) or list(cols)[0]
-    num = [c for c in ["bytes", "response_time_ms", "risk_score", "port"] if c in cols]
-    if not num:
-        return df.groupby(by).size()
-    return df.groupby(by)[num].agg(["mean", "min", "max"]).reset_index()
-
-
-def modin_stats():
-    try:
-        df = read_data(cast(Path, DATASET_PATH), library="modin")
-        cols = set(df.columns)
-        by = _first_present(cols, ["event_type", "event", "source_ip"]) or list(cols)[0]
-        num = [c for c in ["bytes", "response_time_ms", "risk_score", "port"] if c in cols]
-        if not num:
-            return df.groupby(by).size()
-        # Ensure numeric
-        for c in num:
-            try:
-                df[c] = pd.to_numeric(df[c], errors="coerce")
-            except Exception:
-                pass
-        grp = df.groupby(by)
-        # Prefer flat-column NamedAgg to reduce scheduler pressure
-        agg_spec = {f"{c}_mean": (c, "mean") for c in num}
-        agg_spec.update({f"{c}_min": (c, "min") for c in num})
-        agg_spec.update({f"{c}_max": (c, "max") for c in num})
-        try:
-            return grp.agg(agg_spec)
-        except Exception as e1:
-            # Fallback to dict-of-lists (may create MultiIndex columns)
-            try:
-                return grp[num].agg(["mean", "min", "max"])  # type: ignore
-            except Exception as e2:
-                # Final fallback: compute per-column then join to avoid large single graphs
-                parts = []
-                for c in num:
-                    try:
-                        part = grp[c].agg(["mean", "min", "max"]).rename(columns={
-                            "mean": f"{c}_mean",
-                            "min": f"{c}_min",
-                            "max": f"{c}_max",
-                        })
-                        parts.append(part)
-                    except Exception:
-                        continue
-                if not parts:
-                    raise e2
-                out = parts[0]
-                for p in parts[1:]:
-                    out = out.join(p, how="outer")
-                return out
-    except Exception as e:
-        print(f"Warning: Modin statistics failed: {e}")
-        raise
-
-
-def polars_stats():
-    df = read_data(cast(Path, DATASET_PATH), library="polars")
-    cols = set(df.columns)
-    by = _first_present(cols, ["event_type", "event", "source_ip"]) or list(cols)[0]
-    num = [c for c in ["bytes", "response_time_ms", "risk_score", "port"] if c in cols]
-    if not num:
-        return df.group_by(by).len()
-    aggs = []
-    for c in num:
-        aggs += [pl.col(c).mean().alias(f"{c}_mean"), pl.col(c).min().alias(f"{c}_min"), pl.col(c).max().alias(f"{c}_max")]
-    return df.group_by(by).agg(aggs)
-
-
-def duckdb_stats():
-    conn = duckdb.connect()
-    path = cast(Path, DATASET_PATH)
-    expr = _duckdb_table_expr(path)
-    cols = _get_columns_duckdb(path)
-    by = _first_present(cols, ["event_type", "event", "source_ip"]) or next(iter(cols))
-    num = [c for c in ["bytes", "response_time_ms", "risk_score", "port"] if c in cols]
-    if not num:
-        return conn.execute(f"SELECT {by}, COUNT(*) as cnt FROM {expr} GROUP BY {by}").fetchdf()
-    select_list = ", ".join([f"AVG({c}) as {c}_mean, MIN({c}) as {c}_min, MAX({c}) as {c}_max" for c in num])
-    return conn.execute(
-        f"SELECT {by}, {select_list} FROM {expr} GROUP BY {by}"
-    ).fetchdf()
-
-
-def fireducks_stats():
-    if not FIREDUCKS_AVAILABLE:
-        return None
-    df = read_data(cast(Path, DATASET_PATH), library="pandas")
-    return df.groupby("event_type").agg(
-        {
-            "bytes": ["mean", "std", "min", "max"],
-            "response_time_ms": ["mean", "median"],
-            "risk_score": ["mean", "std"],
-        }
-    )
-
-
-# Operation 3: Complex Join and Window Functions
-
-def pandas_complex():
-    df = read_data(cast(Path, DATASET_PATH), library="pandas")
-    cols = set(df.columns)
-    by = _first_present(cols, ["source_ip", "destination_ip", "event"]) or list(cols)[0]
-    metric = _first_present(cols, ["bytes", "port"]) or by
-    summary = df.groupby(by).agg({metric: "count"}).reset_index().rename(columns={metric: "metric_count"})
-    result = df.merge(summary, on=by)
-    result["metric_rank"] = result.groupby(by)["metric_count"].rank(method="dense", ascending=False)
-    return result[result["metric_rank"] <= 10]
-
-
-def modin_complex():
-    try:
-        df = read_data(cast(Path, DATASET_PATH), library="modin")
-        cols = set(df.columns)
-        by = _first_present(cols, ["source_ip", "destination_ip", "event"]) or list(cols)[0]
-        metric = _first_present(cols, ["bytes", "port"]) or by
-        # Compute per-key counts (small table)
-        summary = (
-            df.groupby(by).agg({metric: "count"}).reset_index().rename(columns={metric: "metric_count"})
-        )
-        # Pull top keys (small) to avoid large shuffle/rank
-        try:
-            top_keys = summary.nlargest(10, "metric_count")[by].unique()
-        except Exception:
-            top_keys = summary.sort_values("metric_count", ascending=False)[by].head(10).unique()
-        # Filter original df to those keys
-        result = df[df[by].isin(list(top_keys))]
-        return result
-    except Exception as e:
-        print(f"Warning: Modin complex_join failed: {e}")
-        raise
-
-
-def polars_complex():
-    df = read_data(cast(Path, DATASET_PATH), library="polars")
-    cols = set(df.columns)
-    by = _first_present(cols, ["source_ip", "destination_ip", "event"]) or list(cols)[0]
-    metric = _first_present(cols, ["bytes", "port"]) or by
-    summary = df.group_by(by).agg([pl.col(metric).count().alias("metric_count")])
-    result = df.join(summary, on=by)
-    result = result.with_columns([
-        pl.col("metric_count").rank(method="dense", descending=True).over(by).alias("metric_rank")
-    ])
-    return result.filter(pl.col("metric_rank") <= 10)
-
-
-def duckdb_complex():
-    conn = duckdb.connect()
-    path = cast(Path, DATASET_PATH)
-    expr = _duckdb_table_expr(path)
-    cols = _get_columns_duckdb(path)
-    by = _first_present(cols, ["source_ip", "destination_ip", "event"]) or next(iter(cols))
-    metric = _first_present(cols, ["bytes", "port"]) or by
-    return conn.execute(
-        f"""
-        WITH summary AS (
-            SELECT {by} as key, COUNT({metric}) as metric_count
-            FROM {expr}
-            GROUP BY {by}
-        ), ranked AS (
-            SELECT d.*, s.metric_count,
-                   DENSE_RANK() OVER (PARTITION BY d.{by} ORDER BY s.metric_count DESC) as metric_rank
-            FROM {expr} d
-            JOIN summary s ON d.{by} = s.key
-        )
-        SELECT * FROM ranked WHERE metric_rank <= 10
-        """
-    ).fetchdf()
-
-
-def fireducks_complex():
-    if not FIREDUCKS_AVAILABLE:
-        return None
-    df = read_data(cast(Path, DATASET_PATH), library="pandas")
-    summary = (
-        df.groupby("source_ip")
-        .agg({"bytes": "sum", "response_time_ms": "mean", "risk_score": "mean"})
-        .reset_index()
-    )
-    summary.columns = [
-        "source_ip",
-        "total_bytes",
-        "avg_response_time_ms",
-        "avg_risk_score",
-    ]
-    result = df.merge(summary, on="source_ip")
-    result["bytes_rank"] = result.groupby("event_type")["bytes"].rank(
-        method="dense", ascending=False
-    )
-    return result[result["bytes_rank"] <= 10]
-
-
-# Operation 4: Time Series Analysis
-
-def pandas_timeseries():
-    df = read_data(cast(Path, DATASET_PATH), library="pandas")
-    cols = set(df.columns)
-    if "timestamp" in cols:
-        df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
-        df["hour"] = df["timestamp"].dt.hour
-        by = _first_present(cols, ["event_type", "event", "source_ip"]) or "hour"
-        return df.groupby(["hour", by]).size().reset_index(name="count")
-    by1 = _first_present(cols, ["status_code", "severity", "event"]) or list(cols)[0]
-    by2 = _first_present(cols - {by1}, ["event_type", "event", "source_ip"]) or by1
-    return df.groupby([by1, by2]).size().reset_index(name="count")
-
-
-def modin_timeseries():
-    try:
-        df = read_data(cast(Path, DATASET_PATH), library="modin")
-        cols = set(df.columns)
-        if "timestamp" in cols:
-            df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
-            df["hour"] = df["timestamp"].dt.hour
-            by = _first_present(cols, ["event_type", "event", "source_ip"]) or "hour"
-            return df.groupby(["hour", by]).size().reset_index(name="count")
-        by1 = _first_present(cols, ["status_code", "severity", "event"]) or list(cols)[0]
-        by2 = _first_present(cols - {by1}, ["event_type", "event", "source_ip"]) or by1
-        return df.groupby([by1, by2]).size().reset_index(name="count")
-    except Exception as e:
-        print(f"Warning: Modin timeseries failed: {e}")
-        raise
-
-
-def polars_timeseries():
-    df = read_data(cast(Path, DATASET_PATH), library="polars")
-    cols = set(df.columns)
-    if "timestamp" in cols:
-        df = df.with_columns([
-            pl.col("timestamp").str.strptime(pl.Datetime, strict=False).alias("timestamp_parsed")
-        ]).with_columns([pl.col("timestamp_parsed").dt.hour().alias("hour")])
-        by = _first_present(cols, ["event_type", "event", "source_ip"]) or "hour"
-        return df.group_by(["hour", by]).len()
-    by1 = _first_present(cols, ["status_code", "severity", "event"]) or list(cols)[0]
-    by2 = _first_present(cols - {by1}, ["event_type", "event", "source_ip"]) or by1
-    return df.group_by([by1, by2]).len()
-
-
-def duckdb_timeseries():
-    conn = duckdb.connect()
-    path = cast(Path, DATASET_PATH)
-    expr = _duckdb_table_expr(path)
-    cols = _get_columns_duckdb(path)
-    if "timestamp" in {c.lower() for c in cols}:
-        by = _first_present(cols, ["event_type", "event", "source_ip"]) or "event"
-        return conn.execute(
-            f"SELECT DATE_PART('hour', CAST(timestamp AS TIMESTAMP)) as hour, {by} as key, COUNT(*) as cnt FROM {expr} GROUP BY hour, {by} ORDER BY hour, {by}"
-        ).fetchdf()
-    by1 = _first_present(cols, ["status_code", "severity", "event"]) or next(iter(cols))
-    by2 = _first_present(cols - {by1}, ["event_type", "event", "source_ip"]) or by1
-    return conn.execute(
-        f"SELECT {by1} as k1, {by2} as k2, COUNT(*) as cnt FROM {expr} GROUP BY {by1}, {by2}"
-    ).fetchdf()
-
-
-def fireducks_timeseries():
-    if not FIREDUCKS_AVAILABLE:
-        return None
-    df = read_data(cast(Path, DATASET_PATH), library="pandas")
-    if "timestamp" in df.columns:
-        df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
-        df["hour"] = df["timestamp"].dt.hour
-        return df.groupby(["hour", "event_type"]).agg(
-            {"bytes": ["sum", "count"], "response_time_ms": "mean", "risk_score": "mean"}
-        )
-    else:
-        return df.groupby(["status_code", "event_type"]).size().reset_index(name="count")
-
-
-# Benchmark runner
-
-def run_benchmark_operation(library_name, operation_func, operation_name):
-    """Generic benchmark runner that returns timing information with error handling."""
-    try:
-        if library_name.lower() == "fireducks" and not FIREDUCKS_AVAILABLE:
-            print(f"{library_name} {operation_name} duration: N/A")
-            return None, None
-
-        start = time.time()
-        if library_name.lower() == "modin":
-            # Enhanced memory management for Modin operations
-            import gc
-            gc.collect()  # Clean up before operation
-            
-            try:
-                with redirect_stdout(open(os.devnull, "w")), redirect_stderr(open(os.devnull, "w")):
-                    result = operation_func()
-            except Exception as modin_err:
-                print(f"Modin {operation_name} encountered an error, retrying with fallback: {modin_err}")
-                # Force garbage collection and retry
-                gc.collect()
-                
-                # Try with a single-worker fallback for memory-intensive operations
-                if "memory" in str(modin_err).lower() or "cancelled" in str(modin_err).lower():
-                    try:
-                        from dask.distributed import LocalCluster, Client
-                        fallback_cluster = LocalCluster(
-                            n_workers=1,
-                            threads_per_worker=4,
-                            processes=False,
-                            memory_limit="12GB",
-                            silence_logs=logging.CRITICAL,
-                        )
-                        with Client(fallback_cluster):
-                            with redirect_stdout(open(os.devnull, "w")), redirect_stderr(open(os.devnull, "w")):
-                                result = operation_func()
-                    except Exception:
-                        # Final fallback: just retry once more
-                        with redirect_stdout(open(os.devnull, "w")), redirect_stderr(open(os.devnull, "w")):
-                            result = operation_func()
-                else:
-                    with redirect_stdout(open(os.devnull, "w")), redirect_stderr(open(os.devnull, "w")):
-                        result = operation_func()
-                        
-            # Clean up after Modin operation
-            gc.collect()
-        else:
-            result = operation_func()
-            
-        duration = time.time() - start
-        print(f"{library_name} {operation_name} duration: {duration:.2f}s")
-        return duration, result
-    except Exception as e:
-        print(f"{library_name} {operation_name} failed: {e}")
-        return None, None
-
-
-def run_all_benchmarks():
-    """Run all benchmarks for all available libraries with error handling."""
-    libraries = ["pandas", "modin", "polars", "duckdb"]
-    if FIREDUCKS_AVAILABLE:
-        libraries.append("fireducks")
-
-    operations = {
-        "filter_group": {
+    # Define all operations for each library in ORDERED fashion
+    operation_definitions = [
+        ("filter_group", {
             "pandas": pandas_filter_group,
-            "modin": modin_filter_group,
             "polars": polars_filter_group,
             "duckdb": duckdb_filter_group,
             "fireducks": fireducks_filter_group,
-        },
-        "statistics": {
+        }),
+        ("statistics", {
             "pandas": pandas_stats,
-            "modin": modin_stats,
             "polars": polars_stats,
             "duckdb": duckdb_stats,
             "fireducks": fireducks_stats,
-        },
-        "complex_join": {
+        }),
+        ("complex_join", {
             "pandas": pandas_complex,
-            "modin": modin_complex,
             "polars": polars_complex,
             "duckdb": duckdb_complex,
             "fireducks": fireducks_complex,
-        },
-        "timeseries": {
+        }),
+        ("timeseries", {
             "pandas": pandas_timeseries,
-            "modin": modin_timeseries,
             "polars": polars_timeseries,
             "duckdb": duckdb_timeseries,
             "fireducks": fireducks_timeseries,
-        },
+        }),
+    ]
+
+    # Run benchmarks for each library sequentially
+    all_results = {}
+    libraries = ["pandas", "polars", "duckdb"]
+    if FIREDUCKS_AVAILABLE:
+        libraries.append("fireducks")
+
+    for library_name in libraries:
+        # Show memory usage before each library
+        mem_before = get_memory_usage()
+        print(f"\nMemory usage before {library_name}: {mem_before:.2f}GB")
+        
+        # Create ordered operations dict for this library
+        library_operations = {}
+        for op_name, op_funcs in operation_definitions:
+            library_operations[op_name] = op_funcs[library_name]
+        
+        library_results = run_library_benchmarks(library_name, library_operations)
+        all_results[library_name] = library_results
+        
+        # Show memory usage after cleanup
+        mem_after = get_memory_usage()
+        print(f"Memory usage after {library_name}: {mem_after:.2f}GB")
+
+    # Final memory usage
+    final_memory = get_memory_usage()
+    print(f"\nFinal memory usage: {final_memory:.2f}GB")
+    
+    # Memory usage information (not a warning, just information)
+    memory_growth = final_memory - initial_memory
+    if memory_growth > 1.0:
+        print(f"📊 Memory growth: {memory_growth:.2f}GB")
+        print("   This is normal for data processing libraries that use:")
+        print("   • Memory mapping for large files")
+        print("   • Internal caches for performance")
+        print("   • Thread pools and connection pooling")
+        print("   • Optimized data structures that persist")
+
+    # Write results to CSV
+    write_results_to_csv(all_results, dataset_size)
+
+    # Print summary with operation descriptions, SORTED BY PERFORMANCE (fastest first)
+    print(f"\n{'=' * 70}")
+    print("BENCHMARK SUMMARY (sorted by performance - fastest first)")
+    print(f"{'=' * 70}")
+    
+    operation_descriptions = {
+        "filter_group": "Filter bytes > 1000, group by event_type, count rows",
+        "statistics": "Group by event_type, calc mean/min/max for bytes/response_time_ms/risk_score",
+        "complex_join": "Sum bytes by source_ip, join back, rank by total_bytes, top 10",
+        "timeseries": "Extract hour from timestamp, group by hour+event_type, count"
     }
-
-    results = {}
-    for operation_name, operation_funcs in operations.items():
-        print(f"\n{'=' * 50}")
-        print(f"Running {operation_name.upper()} benchmarks...")
-        print(f"{'=' * 50}")
-
-        operation_results = {}
-        for library_name, func in operation_funcs.items():
-            duration, _ = run_benchmark_operation(library_name, func, operation_name)
-            operation_results[library_name] = duration
-
-        results[operation_name] = operation_results
-
-    return results
-
+    
+    # Use the same order as operation_definitions
+    for operation_name, _ in operation_definitions:
+        print(f"\n{operation_name.upper().replace('_', ' ')}:")
+        print(f"  Task: {operation_descriptions[operation_name]}")
+        
+        # Collect results for this operation and sort by duration (fastest first)
+        operation_results = []
+        for library_name in libraries:
+            duration = all_results.get(library_name, {}).get(operation_name)
+            if duration is not None:
+                operation_results.append((library_name, duration))
+            else:
+                operation_results.append((library_name, float('inf')))  # Put N/A at the end
+        
+        # Sort by duration (fastest first, N/A last)
+        operation_results.sort(key=lambda x: x[1])
+        
+        # Display sorted results
+        for rank, (library_name, duration) in enumerate(operation_results, 1):
+            if duration == float('inf'):
+                print(f"    {rank}. {library_name:10}: N/A")
+            else:
+                speedup_text = ""
+                if rank > 1:
+                    fastest_time = operation_results[0][1]
+                    if fastest_time > 0:
+                        speedup = duration / fastest_time
+                        speedup_text = f" ({speedup:.1f}x slower)"
+                
+                print(f"    {rank}. {library_name:10}: {duration:.4f}s{speedup_text}")
 
 if __name__ == "__main__":
     try:
-        script_name = os.path.basename(__file__)
-        print(f"Running script: {script_name}")
-        
-        print("=" * 60)
-        print("COMPREHENSIVE DATA PROCESSING BENCHMARK")
-        print("=" * 60)
-
-        # Optional CLI/env dataset override
-        parser = argparse.ArgumentParser(add_help=False)
-        parser.add_argument("-d", "--dataset", type=str, help="Path to the dataset file to benchmark")
-        parser.add_argument("-o", "--output", type=str, help="Output CSV file path for results")
-        args, _ = parser.parse_known_args()
-        dataset_env = os.environ.get("BENCHMARK_DATASET")
-        chosen = args.dataset or dataset_env
-        if chosen:
-            DATASET_PATH = Path(chosen)
-        if DATASET_PATH is None:
-            DATASET_PATH = find_dataset(config.project_root)
-        if DATASET_PATH is None or not Path(DATASET_PATH).exists():
-            raise RuntimeError("No dataset found. Use -d/--dataset or set BENCHMARK_DATASET.")
-
-        # Setup
-        setup_modin()
-        pd.set_option("display.float_format", "{:.0f}".format)
-
-        # Memory check before starting
-        available_memory_gb = psutil.virtual_memory().available / (1024**3)
-        if available_memory_gb < 8:
-            print(f"Warning: Only {available_memory_gb:.1f}GB available memory. Benchmark may fail.")
-
-        # Collect host information
-        print("Collecting host information...")
-        host_info = get_host_info()
-        print(
-            f"Running on: {host_info.get('hostname', 'Unknown')} (" \
-            f"{host_info.get('platform', 'Unknown')})"
-        )
-        print(
-            f"CPU: {host_info.get('cpu_brand', 'Unknown')} (" \
-            f"{host_info.get('cpu_count_logical', 'N/A')} logical cores)"
-        )
-        print(f"Memory: {host_info.get('memory_total_gb', 'N/A')} GB total")
-
-        # Dataset info
-        print(f"\nStarting comprehensive benchmark with {DATASET_PATH}")
-        print("This will test 4 different operations across up to 5 libraries...")
-        dataset_size = get_dataset_size(cast(Path, DATASET_PATH))
-        print(f"Dataset size: {dataset_size:,} records")
-
-        # Determine output path
-        if args.output:
-            RESULTS_CSV_PATH = Path(args.output)
-
-        # Run
-        results = run_all_benchmarks()
-
-        # Save results to CSV
-        print(f"\n{'=' * 50}")
-        print("SAVING RESULTS")
-        print(f"{'=' * 50}")
-        save_results_to_csv(RESULTS_CSV_PATH, results, host_info, script_name, dataset_size)
-
-        # Print summary
-        print(f"\n{'=' * 50}")
-        print("BENCHMARK SUMMARY")
-        print(f"{'=' * 50}")
-
-        for operation, timings in results.items():
-            print(f"\n{operation.upper()} Operation:")
-            valid_timings = {lib: t for lib, t in timings.items() if t is not None and t > 0.0}
-            if valid_timings:
-                fastest = min(valid_timings.items(), key=lambda x: x[1])
-                print(f"  Fastest: {fastest[0]} ({fastest[1]:.2f}s)")
-                for lib, duration in sorted(valid_timings.items(), key=lambda x: x[1]):
-                    speedup = fastest[1] / duration if duration > 0 else 0
-                    print(f"  {lib:10}: {duration:6.2f}s (x{speedup:.1f})")
-            else:
-                print("  No valid timings to compare (all skipped or failed).")
-
-        print(f"\nResults saved to: {RESULTS_CSV_PATH}")
-        print("Benchmark completed!")
-
-        with redirect_stderr(open(os.devnull, "w")):
-            time.sleep(0.1)
-        cleanup_modin()
+        main()
+    except KeyboardInterrupt:
+        print("\n\nBenchmark interrupted by user")
+        sys.exit(1)
     except Exception as e:
         print(f"Critical error in main: {e}")
-        cleanup_modin()  # Ensure cleanup even on error
+        import traceback
+        traceback.print_exc()
         sys.exit(1)
+    finally:
+        # Simple cleanup in finally block
+        print("\nCleaning up...")
+        clear_current_data()
+        print("Benchmark completed.")

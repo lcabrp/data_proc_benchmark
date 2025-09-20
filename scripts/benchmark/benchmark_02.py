@@ -1,7 +1,6 @@
-# benchmark_02.py - Comprehensive Data Processing Benchmark (spun off from benchmark.py)
+# benchmark_02.py - Comprehensive Data Processing Benchmark (aligned with benchmark.py and benchmark_01.py)
 import time
 import pandas as pd
-import modin.pandas as mpd
 import polars as pl
 import duckdb
 import platform
@@ -12,10 +11,10 @@ import os
 import csv
 import gzip
 import json
-import zipfile
 import argparse
 import numpy as np
-from typing import Union, Any
+import gc
+from typing import Optional, Callable, Any, Union, List
 from contextlib import redirect_stderr, redirect_stdout
 from typing import cast
 from pathlib import Path
@@ -30,6 +29,8 @@ sys.path.insert(0, project_root)
 # Import our utility modules (fixed import path)
 from utils.host_info import get_host_info
 from utils.config import setup_project
+from utils.data_io import UniversalDataReader, get_dataset_size as universal_dataset_size
+from utils import optimize_df_types
 
 # File format detection and universal reading functions
 def detect_file_format(file_path: Path) -> str:
@@ -97,15 +98,6 @@ def read_file_universal(file_path: Path, library: str = 'pandas', **kwargs) -> U
             return pl.read_json(file_path, **kwargs)
         elif file_format == 'ndjson':
             return pl.read_ndjson(file_path, **kwargs)
-    elif library == 'modin':
-        if file_format == 'csv':
-            return mpd.read_csv(file_path, **kwargs)
-        elif file_format == 'parquet':
-            return mpd.read_parquet(file_path, **kwargs)
-        elif file_format == 'json':
-            return mpd.read_json(file_path, **kwargs)
-        elif file_format == 'ndjson':
-            return mpd.read_json(file_path, lines=True, **kwargs)
     
     # Fallback to pandas CSV
     return pd.read_csv(file_path, **kwargs)
@@ -129,10 +121,6 @@ def find_dataset_file() -> Path:
         "synthetic_logs.csv",
         "synthetic_logs.ndjson",
         "synthetic_logs.jsonl",
-        "logs.parquet",
-        "logs.csv",
-        "logs.ndjson",
-        "logs.jsonl",
         # Compressed variants
         "synthetic_logs_7M.csv.gz",
         "synthetic_logs_10M.csv.gz",
@@ -147,22 +135,9 @@ def find_dataset_file() -> Path:
             return filepath
     
     # Fallback to the original expectation
-    fallback = data_dir / "synthetic_logs_7M.parquet"
+    fallback = data_dir / "raw" / "synthetic_logs_7M.parquet"
     print(f"No dataset found, expecting: {fallback}")
     return fallback
-
-# Modin configuration with fallbacks
-try:
-    import modin.config as cfg
-    # Try Dask first (works on Windows/Linux)
-    cfg.Engine.put("dask")
-    cfg.StorageFormat.put("pandas")
-except Exception:
-    # Fallback to Ray if available (better on Linux)
-    try:
-        cfg.Engine.put("ray")
-    except Exception:
-        pass  # Use default
 
 # FireDucks check (Linux/macOS only)
 FIREDUCKS_AVAILABLE = False
@@ -182,86 +157,474 @@ def get_dataset_size(file_path: Path) -> int:
         int: Number of records in the dataset.
     """
     try:
-        # Use pandas to count rows efficiently
-        df = read_file_universal(file_path, library='pandas')
-        return len(df)
+        return universal_dataset_size(Path(file_path))
     except Exception as e:
         print(f"Warning: Could not determine dataset size: {e}")
         return 0
 
-def setup_modin():
-    """Initialize Modin with memory-optimized Dask configuration for Windows."""
+# Optimization for pandas/fireducks
+def optimize_benchmark_df(bdf: pd.DataFrame) -> pd.DataFrame:
+    """
+    Apply custom dtype optimization rules for memory efficiency.
+    Matches benchmark.py optimizations.
+    """
+    new_dict_types = {
+        'datetime64[ns]': ['timestamp'],
+        'category': ['source_ip', 'destination_ip', 'protocol', 'event_type',
+                     'severity', 'user', 'status_code', 'country', 'device_type'],
+        'uint32': ['bytes', 'session_id'],
+        'uint16': ['response_time_ms', 'port'],
+        'float32': ['risk_score']
+    }
+    return optimize_df_types(bdf, new_dict_types)
+
+def load_and_optimize_pandas(csv_path: str) -> pd.DataFrame:
+    """
+    Load and optimize pandas DataFrame once.
+    """
+    if csv_path.endswith('.parquet'):
+        df = pd.read_parquet(csv_path)
+    else:
+        df = pd.read_csv(csv_path)
+    
     try:
-        # Memory check: Warn if total RAM is below 16GB
-        import psutil
-        total_memory_gb = psutil.virtual_memory().total / (1024**3)
-        available_memory_gb = psutil.virtual_memory().available / (1024**3)
-        if total_memory_gb < 16:
-            print(f"Warning: System has only {total_memory_gb:.1f}GB RAM. Modin may fail on large datasets.")
-        if available_memory_gb < 4:
-            print(f"Warning: Only {available_memory_gb:.1f}GB available memory. Reducing Modin workers.")
-        
-        # Keep Dask/Modin quiet
-        import logging
-        logging.getLogger("distributed").setLevel(logging.ERROR)
-        logging.getLogger("distributed.worker").setLevel(logging.ERROR)
-        logging.getLogger("distributed.scheduler").setLevel(logging.ERROR)
-        logging.getLogger("distributed.client").setLevel(logging.ERROR)
-        logging.getLogger("tornado").setLevel(logging.ERROR)
-        logging.getLogger("bokeh").setLevel(logging.ERROR)
-
-        warnings.filterwarnings("ignore", category=UserWarning, module=".*modin.*")
-        warnings.filterwarnings("ignore", category=FutureWarning, module=".*dask.*")
-
-        import modin.config as cfg
-        cfg.Engine.put("dask")
-        cfg.StorageFormat.put("pandas")
-
-        from dask import config as dask_config
-        from dask.distributed import LocalCluster, Client
-        
-        # Memory-optimized configuration for 16GB systems (stricter limits)
-        logical_cores = psutil.cpu_count(logical=True) or 4
-        
-        # Limit workers to prevent over-allocation; use fewer for stability
-        max_workers = min(logical_cores, max(1, int(available_memory_gb / 4)))  # At least 4GB per worker
-        n_workers = min(logical_cores, max_workers)
-        
-        # Allocate memory per worker based on available RAM, using 70% for safety
-        memory_per_worker_gb = available_memory_gb * 0.7 / n_workers  # Use 70% of available for workers
-        
-        dask_config.set({
-            "distributed.worker.daemon": False,
-            "distributed.comm.timeouts.connect": "10s",
-            "distributed.comm.timeouts.tcp": "10s",
-            "distributed.worker.memory.target": 0.8,  # Target 80% of worker memory
-            "distributed.worker.memory.spill": 0.9,   # Spill to disk at 90%
-            "distributed.worker.memory.pause": 0.95,  # Pause at 95%
-            "distributed.worker.memory.terminate": 0.98,  # Terminate at 98%
-            "dataframe.shuffle.method": "tasks",
-            "array.chunk-size": "128MB",  # Larger chunks for better throughput
-        })
-        
-        # Create a memory-limited cluster
-        cluster = LocalCluster(
-            n_workers=n_workers,
-            threads_per_worker=1,
-            processes=False,  # Use threads on Windows for stability
-            memory_limit=f"{memory_per_worker_gb:.1f}GB",
-            silence_logs=logging.CRITICAL,
-        )
-        
-        # Set the client globally for Modin to use
-        client = Client(cluster)
-        globals()['client'] = client
-        print(f"Dask cluster configured: {n_workers} workers, {memory_per_worker_gb:.1f}GB per worker")
-        
+        original_memory = df.memory_usage(deep=True).sum()
+        opt = optimize_benchmark_df(df)
+        optimized_memory = opt.memory_usage(deep=True).sum()
+        memory_reduction = (original_memory - optimized_memory) / original_memory * 100
+        print(f"  pandas DataFrame optimized: {memory_reduction:.1f}% memory reduction ({original_memory/1024/1024:.1f}MB → {optimized_memory/1024/1024:.1f}MB)")
+        del df
+        gc.collect()
+        return opt
     except Exception as e:
-        print(f"Warning: Modin setup failed: {e}")
+        print(f"Warning: Optimization failed: {e}")
+        return df
 
+def _read_polars(path: str) -> pl.DataFrame:
+    """
+    Read dataset into Polars DataFrame.
+    """
+    fmt = detect_file_format(Path(path))
+    if fmt == 'csv':
+        return cast(pl.DataFrame, pl.read_csv(path))
+    elif fmt == 'parquet':
+        return cast(pl.DataFrame, pl.read_parquet(path))
+    elif fmt == 'json':
+        return cast(pl.DataFrame, pl.read_json(path))
+    elif fmt == 'ndjson':
+        try:
+            return cast(pl.DataFrame, pl.read_ndjson(path))
+        except Exception:
+            return cast(pl.DataFrame, pl.read_json(path, lines=True))
+    else:
+        return cast(pl.DataFrame, pl.read_csv(path))
+
+def load_and_optimize_fireducks(csv_path: str) -> pd.DataFrame:
+    """
+    Load and optimize FireDucks DataFrame once.
+    """
+    if not FIREDUCKS_AVAILABLE:
+        raise RuntimeError("FireDucks not available")
+    if csv_path.endswith('.parquet'):
+        df = fpd.read_parquet(csv_path)
+    else:
+        df = fpd.read_csv(csv_path)
+    try:
+        original = df.memory_usage(deep=True).sum()
+        opt = optimize_benchmark_df(df)
+        optimized = opt.memory_usage(deep=True).sum()
+        red = (original - optimized) / original * 100 if original > 0 else 0
+        print(f"  fireducks DataFrame optimized: {red:.1f}% memory reduction ({original/1024/1024:.1f}MB → {optimized/1024/1024:.1f}MB)")
+        del df
+        gc.collect()
+        return opt
+    except Exception as e:
+        print(f"Warning: FireDucks optimization failed: {e}")
+        return df
+
+# Helper functions for single-load caching
+def run_pandas_operation(func: Callable[[pd.DataFrame], Any],
+                         csv_path: str,
+                         cached_df: Optional[pd.DataFrame] = None) -> Any:
+    """
+    Execute pandas operation using cached DataFrame.
+    """
+    try:
+        df = cached_df if cached_df is not None else load_and_optimize_pandas(csv_path)
+        return func(df)
+    except Exception as e:
+        print(f"Pandas operation failed: {e}")
+        return None
+
+def run_polars_operation(func: Callable[[pl.DataFrame], Any],
+                         csv_path: str,
+                         cached_df: Optional[pl.DataFrame] = None) -> Any:
+    """
+    Execute Polars operation using cached DataFrame.
+    """
+    try:
+        df = cached_df if cached_df is not None else _read_polars(csv_path)
+        return func(df)
+    except Exception as e:
+        print(f"Polars operation failed: {e}")
+        return None
+
+# Operation 1: Filter and Group (aligned with benchmark.py)
+def pandas_filter_group(csv_path: str, cached_df: Optional[pd.DataFrame] = None) -> pd.Series:
+    """
+    Filter bytes > 1000, group by event_type, count.
+    """
+    def op(df: pd.DataFrame) -> Optional[pd.Series]:
+        if "bytes" not in df.columns or "event_type" not in df.columns:
+            return None
+        filtered = df[df["bytes"] > 1000]
+        return filtered.groupby("event_type", observed=False).size()
+    return run_pandas_operation(op, csv_path, cached_df)
+
+def polars_filter_group(csv_path: str, cached_df: Optional[pl.DataFrame] = None) -> pl.DataFrame:
+    """
+    Filter bytes > 1000, group by event_type, count.
+    """
+    def func(df: pl.DataFrame) -> Optional[pl.DataFrame]:
+        if not {"bytes", "event_type"}.issubset(set(df.columns)):
+            return None
+        return df.filter(pl.col("bytes") > 1000).group_by("event_type").agg(pl.len().alias("count"))
+    return run_polars_operation(func, csv_path, cached_df)
+
+def duckdb_filter_group(csv_path: str) -> pd.DataFrame:
+    """
+    Filter bytes > 1000, group by event_type, count.
+    """
+    def operation(path: str, conn: duckdb.DuckDBPyConnection) -> pd.DataFrame:
+        fmt = detect_file_format(Path(path))
+        source = f"read_parquet('{path}')" if fmt == 'parquet' else f"read_csv_auto('{path}')"
+        return conn.execute(f"""
+            SELECT event_type, COUNT(*) AS count
+            FROM {source}
+            WHERE bytes > 1000
+            GROUP BY event_type
+        """).fetchdf()
+    from utils import run_duckdb_operation  # Assuming this is available
+    return run_duckdb_operation(operation, csv_path)
+
+def fireducks_filter_group(csv_path: str, cached_df: Optional[pd.DataFrame] = None) -> pd.Series:
+    """
+    Filter bytes > 1000, group by event_type, count.
+    """
+    def op(df: pd.DataFrame) -> Optional[pd.Series]:
+        if "bytes" not in df.columns or "event_type" not in df.columns:
+            return None
+        return df[df["bytes"] > 1000].groupby("event_type").size()
+    return run_pandas_operation(op, csv_path, cached_df)
+
+# Operation 2: Statistical Analysis (aligned with benchmark.py)
+def pandas_statistics(csv_path: str, cached_df: Optional[pd.DataFrame] = None) -> pd.DataFrame:
+    """
+    Group by event_type, mean/min/max for bytes, response_time_ms, risk_score.
+    """
+    def op(df: pd.DataFrame) -> Optional[pd.DataFrame]:
+        req = {"event_type", "bytes", "response_time_ms", "risk_score"}
+        if not req.issubset(df.columns):
+            return None
+        return df.groupby("event_type", observed=False).agg({
+            "bytes": ["mean", "min", "max"],
+            "response_time_ms": ["mean", "min", "max"],
+            "risk_score": ["mean", "min", "max"]
+        })
+    return run_pandas_operation(op, csv_path, cached_df)
+
+def polars_statistics(csv_path: str, cached_df: Optional[pl.DataFrame] = None) -> pl.DataFrame:
+    """
+    Group by event_type, mean/min/max for bytes, response_time_ms, risk_score.
+    """
+    def func(df: pl.DataFrame) -> Optional[pl.DataFrame]:
+        req = {"event_type", "bytes", "response_time_ms", "risk_score"}
+        if not req.issubset(set(df.columns)):
+            return None
+        return df.group_by("event_type").agg([
+            pl.col("bytes").mean().alias("bytes_mean"),
+            pl.col("bytes").min().alias("bytes_min"),
+            pl.col("bytes").max().alias("bytes_max"),
+            pl.col("response_time_ms").mean().alias("response_time_ms_mean"),
+            pl.col("response_time_ms").min().alias("response_time_ms_min"),
+            pl.col("response_time_ms").max().alias("response_time_ms_max"),
+            pl.col("risk_score").mean().alias("risk_score_mean"),
+            pl.col("risk_score").min().alias("risk_score_min"),
+            pl.col("risk_score").max().alias("risk_score_max")
+        ])
+    return run_polars_operation(func, csv_path, cached_df)
+
+def duckdb_statistics(csv_path: str) -> pd.DataFrame:
+    """
+    Group by event_type, mean/min/max for bytes, response_time_ms, risk_score.
+    """
+    def operation(path: str, conn: duckdb.DuckDBPyConnection) -> pd.DataFrame:
+        fmt = detect_file_format(Path(path))
+        source = f"read_parquet('{path}')" if fmt == 'parquet' else f"read_csv_auto('{path}')"
+        return conn.execute(f"""
+            SELECT event_type,
+                   AVG(bytes) AS bytes_mean, MIN(bytes) AS bytes_min, MAX(bytes) AS bytes_max,
+                   AVG(response_time_ms) AS response_time_ms_mean,
+                   MIN(response_time_ms) AS response_time_ms_min,
+                   MAX(response_time_ms) AS response_time_ms_max,
+                   AVG(risk_score) AS risk_score_mean,
+                   MIN(risk_score) AS risk_score_min,
+                   MAX(risk_score) AS risk_score_max
+            FROM {source}
+            GROUP BY event_type
+        """).fetchdf()
+    from utils import run_duckdb_operation
+    return run_duckdb_operation(operation, csv_path)
+
+def fireducks_statistics(csv_path: str, cached_df: Optional[pd.DataFrame] = None) -> pd.DataFrame:
+    """
+    Group by event_type, mean/min/max for bytes, response_time_ms, risk_score.
+    """
+    def op(df: pd.DataFrame) -> Optional[pd.DataFrame]:
+        req = {"event_type", "bytes", "response_time_ms", "risk_score"}
+        if not req.issubset(df.columns):
+            return None
+        return df.groupby("event_type").agg({
+            "bytes": ["mean", "min", "max"],
+            "response_time_ms": ["mean", "min", "max"],
+            "risk_score": ["mean", "min", "max"]
+        })
+    return run_pandas_operation(op, csv_path, cached_df)
+
+# Operation 3: Complex Join (aligned with benchmark.py)
+def pandas_complex_join(csv_path: str, cached_df: Optional[pd.DataFrame] = None) -> pd.DataFrame:
+    """
+    Sum bytes by source_ip, join back, rank by total_bytes per event_type, top 10.
+    """
+    def op(df: pd.DataFrame) -> Optional[pd.DataFrame]:
+        req = {"source_ip", "bytes", "event_type"}
+        if not req.issubset(df.columns):
+            return None
+        summary = df.groupby("source_ip", observed=False)["bytes"].sum().reset_index().rename(columns={"bytes": "total_bytes"})
+        merged = df.merge(summary, on="source_ip", how="left")
+        merged["total_rank"] = merged.groupby("event_type", observed=False)["total_bytes"].rank(method="dense", ascending=False)
+        return merged.loc[merged["total_rank"] <= 10]
+    return run_pandas_operation(op, csv_path, cached_df)
+
+def polars_complex_join(csv_path: str, cached_df: Optional[pl.DataFrame] = None) -> pl.DataFrame:
+    """
+    Sum bytes by source_ip, join back, rank by total_bytes per event_type, top 10.
+    """
+    def func(df: pl.DataFrame) -> Optional[pl.DataFrame]:
+        if not {"source_ip", "bytes", "event_type"}.issubset(set(df.columns)):
+            return None
+        summary = df.group_by("source_ip").agg(pl.col("bytes").sum().alias("total_bytes"))
+        joined = df.join(summary, on="source_ip", how="left")
+        ranked = joined.with_columns(
+            pl.col("total_bytes").rank("dense", descending=True).over("event_type").alias("total_rank")
+        )
+        return ranked.filter(pl.col("total_rank") <= 10)
+    return run_polars_operation(func, csv_path, cached_df)
+
+def duckdb_complex_join(csv_path: str) -> pd.DataFrame:
+    """
+    Sum bytes by source_ip, join back, rank by total_bytes per event_type, top 10.
+    """
+    def operation(path: str, conn: duckdb.DuckDBPyConnection) -> pd.DataFrame:
+        fmt = detect_file_format(Path(path))
+        source = f"read_parquet('{path}')" if fmt == 'parquet' else f"read_csv_auto('{path}')"
+        return conn.execute(f"""
+            WITH summary AS (
+                SELECT source_ip, SUM(bytes) AS total_bytes
+                FROM {source}
+                GROUP BY source_ip
+            ),
+            joined AS (
+                SELECT d.*, s.total_bytes
+                FROM {source} d
+                JOIN summary s USING (source_ip)
+            ),
+            ranked AS (
+                SELECT *, DENSE_RANK() OVER (
+                    PARTITION BY event_type ORDER BY total_bytes DESC
+                ) AS total_rank
+                FROM joined
+            )
+            SELECT * FROM ranked WHERE total_rank <= 10
+        """).fetchdf()
+    from utils import run_duckdb_operation
+    return run_duckdb_operation(operation, csv_path)
+
+def fireducks_complex_join(csv_path: str, cached_df: Optional[pd.DataFrame] = None) -> pd.DataFrame:
+    """
+    Sum bytes by source_ip, join back, rank by total_bytes per event_type, top 10.
+    """
+    def op(df: pd.DataFrame) -> Optional[pd.DataFrame]:
+        req = {"source_ip", "bytes", "event_type"}
+        if not req.issubset(df.columns):
+            return None
+        summary = df.groupby("source_ip")["bytes"].sum().reset_index().rename(columns={"bytes": "total_bytes"})
+        merged = df.merge(summary, on="source_ip", how="left")
+        merged["total_rank"] = merged.groupby("event_type")["total_bytes"].rank(method="dense", ascending=False)
+        return merged[merged["total_rank"] <= 10]
+    return run_pandas_operation(op, csv_path, cached_df)
+
+# Operation 4: Time Series (aligned with benchmark.py)
+def pandas_timeseries(csv_path: str, cached_df: Optional[pd.DataFrame] = None) -> pd.Series:
+    """
+    Extract hour from timestamp, group by (hour, event_type), count.
+    """
+    def op(df: pd.DataFrame) -> Optional[pd.Series]:
+        if "event_type" not in df.columns:
+            return None
+        work = df.copy()
+        if "timestamp" in work.columns:
+            ts = pd.to_datetime(work["timestamp"], errors="coerce")
+            hour = ts.dt.hour
+        else:
+            hour = 0
+        work = work.assign(_hour=hour)
+        return work.groupby(["_hour", "event_type"], observed=False).size()
+    return run_pandas_operation(op, csv_path, cached_df)
+
+def polars_timeseries(csv_path: str, cached_df: Optional[pl.DataFrame] = None) -> pl.DataFrame:
+    """
+    Extract hour from timestamp, group by (hour, event_type), count.
+    """
+    def func(df: pl.DataFrame) -> Optional[pl.DataFrame]:
+        if "event_type" not in df.columns:
+            return None
+        if "timestamp" in df.columns:
+            df2 = df.with_columns(
+                pl.col("timestamp").str.to_datetime(strict=False).dt.hour().alias("_hour")
+            )
+        else:
+            df2 = df.with_columns(pl.lit(0).alias("_hour"))
+        return df2.group_by(["_hour", "event_type"]).agg(pl.len().alias("count"))
+    return run_polars_operation(func, csv_path, cached_df)
+
+def duckdb_timeseries(csv_path: str) -> pd.DataFrame:
+    """
+    Extract hour from timestamp, group by (hour, event_type), count.
+    """
+    def operation(path: str, conn: duckdb.DuckDBPyConnection) -> pd.DataFrame:
+        fmt = detect_file_format(Path(path))
+        source = f"read_parquet('{path}')" if fmt == 'parquet' else f"read_csv_auto('{path}')"
+        try:
+            return conn.execute(f"""
+                SELECT date_part('hour', CAST(timestamp AS TIMESTAMP)) AS hour,
+                       event_type,
+                       COUNT(*) AS count
+                FROM {source}
+                GROUP BY hour, event_type
+            """).fetchdf()
+        except Exception:
+            return conn.execute(f"""
+                SELECT 0 AS hour, event_type, COUNT(*) AS count
+                FROM {source}
+                GROUP BY event_type
+            """).fetchdf()
+    from utils import run_duckdb_operation
+    return run_duckdb_operation(operation, csv_path)
+
+def fireducks_timeseries(csv_path: str, cached_df: Optional[pd.DataFrame] = None) -> pd.Series:
+    """
+    Extract hour from timestamp, group by (hour, event_type), count.
+    """
+    def op(df: pd.DataFrame) -> Optional[pd.Series]:
+        if "event_type" not in df.columns:
+            return None
+        if "timestamp" in df.columns:
+            ts = pd.to_datetime(df["timestamp"], errors="coerce")
+            hour = ts.dt.hour
+        else:
+            hour = 0
+        tmp = df.assign(_hour=hour)
+        return tmp.groupby(["_hour", "event_type"]).size()
+    return run_pandas_operation(op, csv_path, cached_df)
+
+# Benchmark runner with single-load caching
+def run_library_benchmarks(library_name: str, csv_path: str, repeat: int = 1) -> dict:
+    """
+    Execute all benchmark operations for a single library with single-load caching.
+    """
+    operations = {}
+    for op in ["filter_group", "statistics", "complex_join", "timeseries"]:
+        fn = f"{library_name}_{op}"
+        if fn in globals():
+            operations[op] = globals()[fn]
+        else:
+            print(f"ERROR: Missing function {fn}; skipping {library_name}.")
+            return {}
+
+    cached_df = None
+    if library_name == "pandas":
+        print("Loading and optimizing pandas DataFrame...")
+        cached_df = load_and_optimize_pandas(csv_path)
+    elif library_name == "fireducks" and FIREDUCKS_AVAILABLE:
+        print("Loading and optimizing fireducks DataFrame...")
+        cached_df = load_and_optimize_fireducks(csv_path)
+    elif library_name == "polars":
+        print("Loading Polars DataFrame once...")
+        cached_df = _read_polars(csv_path)
+
+    out: dict = {}
+    for op_name, op_func in operations.items():
+        print(f"\n--- {library_name.upper()} {op_name} ---")
+        durations: List[float] = []
+        for _ in range(repeat):
+            if library_name in ("pandas", "fireducks", "polars"):
+                dur = run_benchmark_operation(
+                    library_name,
+                    lambda path, _op=op_func, _cache=cached_df: _op(path, _cache),
+                    op_name,
+                    csv_path
+                )
+            else:
+                dur = run_benchmark_operation(library_name, op_func, op_name, csv_path)
+            if dur is not None:
+                durations.append(dur)
+        out[op_name] = float(np.mean(durations)) if durations else None
+
+    if cached_df is not None:
+        print(f"  Releasing cached {library_name} DataFrame...")
+        del cached_df
+        gc.collect()
+
+    return out
+
+def run_all_benchmarks(csv_path: str, repeat: int = 1) -> dict:
+    """Run benchmarks for all available libraries."""
+    libraries = ["pandas", "polars", "duckdb"]
+    if FIREDUCKS_AVAILABLE:
+        libraries.append("fireducks")
+    results: dict = {}
+    for lib in libraries:
+        print(f"\n{'='*50}\nRunning benchmarks for {lib.upper()}...\n{'='*50}")
+        lib_results = run_library_benchmarks(lib, csv_path, repeat)
+        if lib_results:
+            results[lib] = lib_results
+    return results
+
+def run_benchmark_operation(library_name: str,
+                            operation_func: Callable,
+                            operation_name: str,
+                            csv_path: str) -> Optional[float]:
+    """
+    Time a single operation.
+    """
+    try:
+        start = time.perf_counter()
+        result = operation_func(csv_path)
+        duration = time.perf_counter() - start
+        print(f"{library_name} {operation_name} duration: {duration:.2f}s")
+        if result is None:
+            return None
+        return max(duration, 1e-6)
+    except Exception as e:
+        print(f"{library_name} {operation_name} failed: {e}")
+        return None
+
+# CSV saving function (unchanged, matches other modules)
 def save_results_to_csv(results: dict, host_info: dict, script_name: str, dataset_size: int) -> None:
     """
     Save benchmark results to CSV file with error handling.
+    Matches the structure of benchmark.py and benchmark_01.py.
     Args:
         results (dict): Benchmark results.
         host_info (dict): Host system information.
@@ -279,21 +642,17 @@ def save_results_to_csv(results: dict, host_info: dict, script_name: str, datase
                     "memory_total_gb", "memory_available_gb", "python_version", "python_implementation",
                     "cpu_brand", "cpu_arch",  # Host info ends here
                     "dataset_size", "dataset_name", "dataset_format",  # Dataset metadata
-                    "filter_group_pandas_seconds", "filter_group_modin_seconds", "filter_group_polars_seconds",
+                    "filter_group_pandas_seconds", "filter_group_polars_seconds",
                     "filter_group_duckdb_seconds", "filter_group_fireducks_seconds",
-                    "statistics_pandas_seconds", "statistics_modin_seconds", "statistics_polars_seconds",
+                    "statistics_pandas_seconds", "statistics_polars_seconds",
                     "statistics_duckdb_seconds", "statistics_fireducks_seconds",
-                    "complex_join_pandas_seconds", "complex_join_modin_seconds", "complex_join_polars_seconds",
+                    "complex_join_pandas_seconds", "complex_join_polars_seconds",
                     "complex_join_duckdb_seconds", "complex_join_fireducks_seconds",
-                    "timeseries_pandas_seconds", "timeseries_modin_seconds", "timeseries_polars_seconds",
+                    "timeseries_pandas_seconds", "timeseries_polars_seconds",
                     "timeseries_duckdb_seconds", "timeseries_fireducks_seconds",
                     "script_name"  # Moved to the end
                 ]
                 writer.writerow(header)
-            
-            # Helper function to handle None values
-            def safe_value(value):
-                return np.nan if value is None or value == 0.0 else value
             
             # Derive dataset metadata
             try:
@@ -319,41 +678,26 @@ def save_results_to_csv(results: dict, host_info: dict, script_name: str, datase
                 host_info.get("python_implementation"), host_info.get("cpu_brand"),
                 host_info.get("cpu_arch"),
                 dataset_size, ds_name, ds_fmt,
-                # Timing columns (fixed order: operation first, then library)
-                safe_value(results.get("filter_group", {}).get("pandas")),
-                safe_value(results.get("filter_group", {}).get("modin")),
-                safe_value(results.get("filter_group", {}).get("polars")),
-                safe_value(results.get("filter_group", {}).get("duckdb")),
-                safe_value(results.get("filter_group", {}).get("fireducks")),
-                safe_value(results.get("statistics", {}).get("pandas")),
-                safe_value(results.get("statistics", {}).get("modin")),
-                safe_value(results.get("statistics", {}).get("polars")),
-                safe_value(results.get("statistics", {}).get("duckdb")),
-                safe_value(results.get("statistics", {}).get("fireducks")),
-                safe_value(results.get("complex_join", {}).get("pandas")),
-                safe_value(results.get("complex_join", {}).get("modin")),
-                safe_value(results.get("complex_join", {}).get("polars")),
-                safe_value(results.get("complex_join", {}).get("duckdb")),
-                safe_value(results.get("complex_join", {}).get("fireducks")),
-                safe_value(results.get("timeseries", {}).get("pandas")),
-                safe_value(results.get("timeseries", {}).get("modin")),
-                safe_value(results.get("timeseries", {}).get("polars")),
-                safe_value(results.get("timeseries", {}).get("duckdb")),
-                safe_value(results.get("timeseries", {}).get("fireducks")),
-                script_name  # Moved to the end
             ]
+            
+            # Append timing values with explicit handling for None/invalid values
+            for op in ["filter_group", "statistics", "complex_join", "timeseries"]:
+                for lib in ["pandas", "polars", "duckdb", "fireducks"]:
+                    val = results.get(op, {}).get(lib)
+                    if val is None or (isinstance(val, float) and (np.isnan(val) or val <= 0)):
+                        row.append("")  # Blank for missing/unavailable
+                    else:
+                        row.append(f"{val}")  # High precision
+            
+            row.append(script_name)  # Moved to the end
             writer.writerow(row)
         print(f"Results saved to {RESULTS_CSV_PATH}")
     except Exception as e:
         print(f"Error saving results to CSV: {e}")
-
+        
 # Operation 1: Filter and Group (Original)
 def pandas_filter_group():
     df = cast(pd.DataFrame, read_file_universal(DATASET_PATH, library='pandas'))
-    return df[df["status_code"] == 200].groupby("source_ip").agg({"bytes": "sum"})
-
-def modin_filter_group():
-    df = read_file_universal(DATASET_PATH, library='modin')
     return df[df["status_code"] == 200].groupby("source_ip").agg({"bytes": "sum"})
 
 def polars_filter_group():
@@ -400,70 +744,6 @@ def pandas_stats():
         "response_time_ms": ["mean", "median"],
         "risk_score": ["mean", "std"]
     })
-
-def modin_stats():
-    # Read only needed columns; let Modin infer dtypes to avoid int64/float64 conflicts
-    usecols = ["event_type", "bytes", "response_time_ms", "risk_score"]
-    df = read_file_universal(DATASET_PATH, library='modin')
-    # Select only needed columns after reading, since Modin doesn't support usecols
-    df = df[usecols]
-
-    # Ensure numeric columns are float64 for aggregations that yield floats
-    import pandas as _pd
-    for c in ["bytes", "response_time_ms", "risk_score"]:
-        df[c] = _pd.to_numeric(df[c], errors="coerce").astype("float64")
-
-    grp = df.groupby("event_type")
-
-    # Build each metric as a Series and join; avoids .columns on a Series
-    bytes_mean = grp["bytes"].mean().rename("bytes_mean")
-    bytes_std = grp["bytes"].std().rename("bytes_std")
-    bytes_min = grp["bytes"].min().rename("bytes_min")
-    bytes_max = grp["bytes"].max().rename("bytes_max")
-    
-    # Create bytes_stats DataFrame more safely
-    bytes_stats = bytes_mean.to_frame()
-    bytes_stats = bytes_stats.join(bytes_std.to_frame())
-    bytes_stats = bytes_stats.join(bytes_min.to_frame())
-    bytes_stats = bytes_stats.join(bytes_max.to_frame())
-
-    rt_mean = grp["response_time_ms"].mean().rename("response_time_ms_mean")
-
-    # Median separately with robust type handling
-    try:
-        rt_median_raw = grp["response_time_ms"].quantile(0.5)
-        
-        # Handle both Series and DataFrame cases
-        if isinstance(rt_median_raw, pd.DataFrame):
-            # If it's a DataFrame, take the first column
-            rt_median = rt_median_raw.iloc[:, 0].rename("response_time_ms_median")
-        else:
-            # If it's already a Series, just rename it
-            rt_median = rt_median_raw.rename("response_time_ms_median")
-    except Exception as e:
-        # If Modin quantile fails, use pandas fallback
-        try:
-            rt_median = (
-                df[["event_type", "response_time_ms"]]
-                .to_pandas()
-                .groupby("event_type")["response_time_ms"]
-                .median()
-                .rename("response_time_ms_median")
-            )
-        except Exception:
-            # Last resort: create a dummy series with reasonable median value
-            rt_median = pd.Series([83.0] * len(bytes_mean), index=bytes_mean.index, name="response_time_ms_median")
-
-    risk_mean = grp["risk_score"].mean().rename("risk_score_mean")
-    risk_std = grp["risk_score"].std().rename("risk_score_std")
-
-    # Join all components safely
-    result = bytes_stats.join(rt_mean.to_frame())
-    result = result.join(rt_median.to_frame())
-    result = result.join(risk_mean.to_frame())
-    result = result.join(risk_std.to_frame())
-    
-    return result
 
 def polars_stats():
     df = cast(pl.DataFrame, read_file_universal(DATASET_PATH, library='polars'))
@@ -536,25 +816,6 @@ def pandas_complex():
     # Add window function - rank by bytes within each event_type
     result["bytes_rank"] = result.groupby("event_type")["bytes"].rank(method="dense", ascending=False)
     return result[result["bytes_rank"] <= 10]  # Top 10 by bytes per event_type
-
-def modin_complex():
-    try:
-        df = read_file_universal(DATASET_PATH, library='modin')
-        # Compute per-key counts (small table) to avoid heavy ranking
-        summary = (
-            df.groupby("source_ip").agg({"bytes": "count"}).reset_index().rename(columns={"bytes": "metric_count"})
-        )
-        # Pull top keys (small) to avoid large shuffle/rank
-        try:
-            top_keys = summary.nlargest(10, "metric_count")["source_ip"].unique()
-        except Exception:
-            top_keys = summary.sort_values("metric_count", ascending=False)["source_ip"].head(10).unique()
-        # Filter original df to those keys
-        result = df[df["source_ip"].isin(list(top_keys))]
-        return result
-    except Exception as e:
-        print(f"Warning: Modin complex_join failed: {e}")
-        raise
 
 def polars_complex():
     df = cast(pl.DataFrame, read_file_universal(DATASET_PATH, library='polars'))
@@ -636,19 +897,6 @@ def pandas_timeseries():
         })
     else:
         # Fallback: analyze by status_code patterns
-        return df.groupby(['status_code', 'event_type']).size().reset_index(name='count')
-
-def modin_timeseries():
-    df = read_file_universal(DATASET_PATH, library='modin')
-    if 'timestamp' in df.columns:
-        df['timestamp'] = pd.to_datetime(df['timestamp'])  # Use pandas for datetime conversion
-        df['hour'] = df['timestamp'].dt.hour
-        return df.groupby(['hour', 'event_type']).agg({
-            'bytes': ['sum', 'count'],
-            'response_time_ms': 'mean',
-            'risk_score': 'mean'
-        })
-    else:
         return df.groupby(['status_code', 'event_type']).size().reset_index(name='count')
 
 def polars_timeseries():
@@ -737,35 +985,31 @@ def fireducks_timeseries():
 def run_all_benchmarks():
     """Run all benchmarks for all available libraries with error handling"""
     try:
-        libraries = ["pandas", "modin", "polars", "duckdb"]
+        libraries = ["pandas", "polars", "duckdb"]
         if FIREDUCKS_AVAILABLE:
             libraries.append("fireducks")
         
         operations = {
             "filter_group": {
                 "pandas": pandas_filter_group,
-                "modin": modin_filter_group,
                 "polars": polars_filter_group,
                 "duckdb": duckdb_filter_group,
                 "fireducks": fireducks_filter_group
             },
             "statistics": {
                 "pandas": pandas_stats,
-                "modin": modin_stats,
                 "polars": polars_stats,
                 "duckdb": duckdb_stats,
                 "fireducks": fireducks_stats
             },
             "complex_join": {
                 "pandas": pandas_complex,
-                "modin": modin_complex,
                 "polars": polars_complex,
                 "duckdb": duckdb_complex,
                 "fireducks": fireducks_complex
             },
             "timeseries": {
                 "pandas": pandas_timeseries,
-                "modin": modin_timeseries,
                 "polars": polars_timeseries,
                 "duckdb": duckdb_timeseries,
                 "fireducks": fireducks_timeseries
@@ -800,65 +1044,7 @@ def run_benchmark_operation(library_name, operation_func, operation_name):
         
         start = time.time()
         
-        # Suppress output for Modin operations to prevent Dask verbosity and errors
-        if library_name.lower() == "modin":
-            import gc
-            gc.collect()  # Clean up before operation
-            
-            # Adaptive failure tracking (like modular script)
-            failure_count = globals().get('__modin_failure_count', 0)
-            failure_threshold = globals().get('__modin_failure_threshold', 3)
-            modin_disabled = globals().get('__modin_disabled', False)
-            
-            if modin_disabled:
-                print(f"Modin {operation_name} skipped: disabled due to repeated failures.")
-                return None, None
-            
-            try:
-                with redirect_stdout(open(os.devnull, 'w')), redirect_stderr(open(os.devnull, 'w')):
-                    result = operation_func()
-            except Exception as modin_err:
-                print(f"Modin {operation_name} encountered an error, retrying with fallback: {modin_err}")
-                # Increment failure counter
-                failure_count += 1
-                globals()['__modin_failure_count'] = failure_count
-                if failure_count >= failure_threshold:
-                    globals()['__modin_disabled'] = True
-                    print(f"Modin disabled after {failure_count} failures.")
-                    return None, None
-                
-                # Force garbage collection and retry
-                gc.collect()
-                
-                # Try with a single-worker fallback for memory-intensive operations
-                if "memory" in str(modin_err).lower() or "cancelled" in str(modin_err).lower() or "no valid workers" in str(modin_err).lower() or "lost dependencies" in str(modin_err).lower():
-                    try:
-                        from dask.distributed import LocalCluster, Client
-                        fallback_cluster = LocalCluster(
-                            n_workers=1,
-                            threads_per_worker=4,
-                            processes=False,
-                            memory_limit="12GB",
-                            silence_logs=logging.CRITICAL,
-                        )
-                        with Client(fallback_cluster):
-                            with redirect_stdout(open(os.devnull, 'w')), redirect_stderr(open(os.devnull, 'w')):
-                                result = operation_func()
-                        print(f"Modin {operation_name} fallback succeeded.")
-                        return time.time() - start, result
-                    except Exception as fallback_err:
-                        print(f"Modin {operation_name} fallback failed: {fallback_err}")
-                        # Final fallback: just retry once more without cluster override
-                        with redirect_stdout(open(os.devnull, 'w')), redirect_stderr(open(os.devnull, 'w')):
-                            result = operation_func()
-                else:
-                    with redirect_stdout(open(os.devnull, 'w')), redirect_stderr(open(os.devnull, 'w')):
-                        result = operation_func()
-                        
-            # Clean up after Modin operation
-            gc.collect()
-        else:
-            result = operation_func()
+        result = operation_func()
             
         duration = time.time() - start
         print(f"{library_name} {operation_name} duration: {duration:.2f}s")
@@ -905,7 +1091,6 @@ if __name__ == "__main__":
         RESULTS_CSV_PATH.parent.mkdir(parents=True, exist_ok=True)
 
         # Setup
-        setup_modin()
         pd.set_option('display.float_format', '{:.0f}'.format)
 
         # Memory check before starting
@@ -923,7 +1108,7 @@ if __name__ == "__main__":
 
         # Run all benchmarks
         print(f"\nStarting comprehensive benchmark with {DATASET_PATH}")
-        print("This will test 4 different operations across 5 libraries...")
+        print("This will test 4 different operations across 4 libraries...")
         
         # Get dataset size
         dataset_size = get_dataset_size(DATASET_PATH)
