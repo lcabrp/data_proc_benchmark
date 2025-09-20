@@ -269,32 +269,21 @@ def run_polars_operation(func: Callable[[pl.DataFrame], Any],
         print(f"Polars operation failed: {e}")
         return None
 
-# Operation 1: Filter and Group (aligned with benchmark.py)
-def pandas_filter_group(csv_path: str, cached_df: Optional[pd.DataFrame] = None) -> pd.Series:
-    """
-    Filter bytes > 1000, group by event_type, count.
-    """
-    def op(df: pd.DataFrame) -> Optional[pd.Series]:
-        if "bytes" not in df.columns or "event_type" not in df.columns:
-            return None
-        filtered = df[df["bytes"] > 1000]
-        return filtered.groupby("event_type", observed=False).size()
-    return run_pandas_operation(op, csv_path, cached_df)
+# Replace the DuckDB functions with self-contained versions
 
-def polars_filter_group(csv_path: str, cached_df: Optional[pl.DataFrame] = None) -> pl.DataFrame:
-    """
-    Filter bytes > 1000, group by event_type, count.
-    """
-    def func(df: pl.DataFrame) -> Optional[pl.DataFrame]:
-        if not {"bytes", "event_type"}.issubset(set(df.columns)):
-            return None
-        return df.filter(pl.col("bytes") > 1000).group_by("event_type").agg(pl.len().alias("count"))
-    return run_polars_operation(func, csv_path, cached_df)
+def run_duckdb_operation(operation_func: Callable, csv_path: str) -> Any:
+    """Execute DuckDB operation with proper connection management."""
+    try:
+        conn = duckdb.connect(":memory:")
+        result = operation_func(csv_path, conn)
+        conn.close()
+        return result
+    except Exception as e:
+        print(f"DuckDB operation failed: {e}")
+        return None
 
-def duckdb_filter_group(csv_path: str) -> pd.DataFrame:
-    """
-    Filter bytes > 1000, group by event_type, count.
-    """
+def duckdb_filter_group(csv_path: str, cached_df: Optional[Any] = None) -> pd.DataFrame:
+    """Filter bytes > 1000, group by event_type, count. (cached_df unused for consistency)"""
     def operation(path: str, conn: duckdb.DuckDBPyConnection) -> pd.DataFrame:
         fmt = detect_file_format(Path(path))
         source = f"read_parquet('{path}')" if fmt == 'parquet' else f"read_csv_auto('{path}')"
@@ -304,60 +293,10 @@ def duckdb_filter_group(csv_path: str) -> pd.DataFrame:
             WHERE bytes > 1000
             GROUP BY event_type
         """).fetchdf()
-    from utils import run_duckdb_operation  # Assuming this is available
     return run_duckdb_operation(operation, csv_path)
 
-def fireducks_filter_group(csv_path: str, cached_df: Optional[pd.DataFrame] = None) -> pd.Series:
-    """
-    Filter bytes > 1000, group by event_type, count.
-    """
-    def op(df: pd.DataFrame) -> Optional[pd.Series]:
-        if "bytes" not in df.columns or "event_type" not in df.columns:
-            return None
-        return df[df["bytes"] > 1000].groupby("event_type").size()
-    return run_pandas_operation(op, csv_path, cached_df)
-
-# Operation 2: Statistical Analysis (aligned with benchmark.py)
-def pandas_statistics(csv_path: str, cached_df: Optional[pd.DataFrame] = None) -> pd.DataFrame:
-    """
-    Group by event_type, mean/min/max for bytes, response_time_ms, risk_score.
-    """
-    def op(df: pd.DataFrame) -> Optional[pd.DataFrame]:
-        req = {"event_type", "bytes", "response_time_ms", "risk_score"}
-        if not req.issubset(df.columns):
-            return None
-        return df.groupby("event_type", observed=False).agg({
-            "bytes": ["mean", "min", "max"],
-            "response_time_ms": ["mean", "min", "max"],
-            "risk_score": ["mean", "min", "max"]
-        })
-    return run_pandas_operation(op, csv_path, cached_df)
-
-def polars_statistics(csv_path: str, cached_df: Optional[pl.DataFrame] = None) -> pl.DataFrame:
-    """
-    Group by event_type, mean/min/max for bytes, response_time_ms, risk_score.
-    """
-    def func(df: pl.DataFrame) -> Optional[pl.DataFrame]:
-        req = {"event_type", "bytes", "response_time_ms", "risk_score"}
-        if not req.issubset(set(df.columns)):
-            return None
-        return df.group_by("event_type").agg([
-            pl.col("bytes").mean().alias("bytes_mean"),
-            pl.col("bytes").min().alias("bytes_min"),
-            pl.col("bytes").max().alias("bytes_max"),
-            pl.col("response_time_ms").mean().alias("response_time_ms_mean"),
-            pl.col("response_time_ms").min().alias("response_time_ms_min"),
-            pl.col("response_time_ms").max().alias("response_time_ms_max"),
-            pl.col("risk_score").mean().alias("risk_score_mean"),
-            pl.col("risk_score").min().alias("risk_score_min"),
-            pl.col("risk_score").max().alias("risk_score_max")
-        ])
-    return run_polars_operation(func, csv_path, cached_df)
-
-def duckdb_statistics(csv_path: str) -> pd.DataFrame:
-    """
-    Group by event_type, mean/min/max for bytes, response_time_ms, risk_score.
-    """
+def duckdb_statistics(csv_path: str, cached_df: Optional[Any] = None) -> pd.DataFrame:
+    """Group by event_type, mean/min/max for bytes, response_time_ms, risk_score. (cached_df unused for consistency)"""
     def operation(path: str, conn: duckdb.DuckDBPyConnection) -> pd.DataFrame:
         fmt = detect_file_format(Path(path))
         source = f"read_parquet('{path}')" if fmt == 'parquet' else f"read_csv_auto('{path}')"
@@ -373,58 +312,10 @@ def duckdb_statistics(csv_path: str) -> pd.DataFrame:
             FROM {source}
             GROUP BY event_type
         """).fetchdf()
-    from utils import run_duckdb_operation
     return run_duckdb_operation(operation, csv_path)
 
-def fireducks_statistics(csv_path: str, cached_df: Optional[pd.DataFrame] = None) -> pd.DataFrame:
-    """
-    Group by event_type, mean/min/max for bytes, response_time_ms, risk_score.
-    """
-    def op(df: pd.DataFrame) -> Optional[pd.DataFrame]:
-        req = {"event_type", "bytes", "response_time_ms", "risk_score"}
-        if not req.issubset(df.columns):
-            return None
-        return df.groupby("event_type").agg({
-            "bytes": ["mean", "min", "max"],
-            "response_time_ms": ["mean", "min", "max"],
-            "risk_score": ["mean", "min", "max"]
-        })
-    return run_pandas_operation(op, csv_path, cached_df)
-
-# Operation 3: Complex Join (aligned with benchmark.py)
-def pandas_complex_join(csv_path: str, cached_df: Optional[pd.DataFrame] = None) -> pd.DataFrame:
-    """
-    Sum bytes by source_ip, join back, rank by total_bytes per event_type, top 10.
-    """
-    def op(df: pd.DataFrame) -> Optional[pd.DataFrame]:
-        req = {"source_ip", "bytes", "event_type"}
-        if not req.issubset(df.columns):
-            return None
-        summary = df.groupby("source_ip", observed=False)["bytes"].sum().reset_index().rename(columns={"bytes": "total_bytes"})
-        merged = df.merge(summary, on="source_ip", how="left")
-        merged["total_rank"] = merged.groupby("event_type", observed=False)["total_bytes"].rank(method="dense", ascending=False)
-        return merged.loc[merged["total_rank"] <= 10]
-    return run_pandas_operation(op, csv_path, cached_df)
-
-def polars_complex_join(csv_path: str, cached_df: Optional[pl.DataFrame] = None) -> pl.DataFrame:
-    """
-    Sum bytes by source_ip, join back, rank by total_bytes per event_type, top 10.
-    """
-    def func(df: pl.DataFrame) -> Optional[pl.DataFrame]:
-        if not {"source_ip", "bytes", "event_type"}.issubset(set(df.columns)):
-            return None
-        summary = df.group_by("source_ip").agg(pl.col("bytes").sum().alias("total_bytes"))
-        joined = df.join(summary, on="source_ip", how="left")
-        ranked = joined.with_columns(
-            pl.col("total_bytes").rank("dense", descending=True).over("event_type").alias("total_rank")
-        )
-        return ranked.filter(pl.col("total_rank") <= 10)
-    return run_polars_operation(func, csv_path, cached_df)
-
-def duckdb_complex_join(csv_path: str) -> pd.DataFrame:
-    """
-    Sum bytes by source_ip, join back, rank by total_bytes per event_type, top 10.
-    """
+def duckdb_complex_join(csv_path: str, cached_df: Optional[Any] = None) -> pd.DataFrame:
+    """Sum bytes by source_ip, join back, rank by total_bytes per event_type, top 10. (cached_df unused for consistency)"""
     def operation(path: str, conn: duckdb.DuckDBPyConnection) -> pd.DataFrame:
         fmt = detect_file_format(Path(path))
         source = f"read_parquet('{path}')" if fmt == 'parquet' else f"read_csv_auto('{path}')"
@@ -447,61 +338,10 @@ def duckdb_complex_join(csv_path: str) -> pd.DataFrame:
             )
             SELECT * FROM ranked WHERE total_rank <= 10
         """).fetchdf()
-    from utils import run_duckdb_operation
     return run_duckdb_operation(operation, csv_path)
 
-def fireducks_complex_join(csv_path: str, cached_df: Optional[pd.DataFrame] = None) -> pd.DataFrame:
-    """
-    Sum bytes by source_ip, join back, rank by total_bytes per event_type, top 10.
-    """
-    def op(df: pd.DataFrame) -> Optional[pd.DataFrame]:
-        req = {"source_ip", "bytes", "event_type"}
-        if not req.issubset(df.columns):
-            return None
-        summary = df.groupby("source_ip")["bytes"].sum().reset_index().rename(columns={"bytes": "total_bytes"})
-        merged = df.merge(summary, on="source_ip", how="left")
-        merged["total_rank"] = merged.groupby("event_type")["total_bytes"].rank(method="dense", ascending=False)
-        return merged[merged["total_rank"] <= 10]
-    return run_pandas_operation(op, csv_path, cached_df)
-
-# Operation 4: Time Series (aligned with benchmark.py)
-def pandas_timeseries(csv_path: str, cached_df: Optional[pd.DataFrame] = None) -> pd.Series:
-    """
-    Extract hour from timestamp, group by (hour, event_type), count.
-    """
-    def op(df: pd.DataFrame) -> Optional[pd.Series]:
-        if "event_type" not in df.columns:
-            return None
-        work = df.copy()
-        if "timestamp" in work.columns:
-            ts = pd.to_datetime(work["timestamp"], errors="coerce")
-            hour = ts.dt.hour
-        else:
-            hour = 0
-        work = work.assign(_hour=hour)
-        return work.groupby(["_hour", "event_type"], observed=False).size()
-    return run_pandas_operation(op, csv_path, cached_df)
-
-def polars_timeseries(csv_path: str, cached_df: Optional[pl.DataFrame] = None) -> pl.DataFrame:
-    """
-    Extract hour from timestamp, group by (hour, event_type), count.
-    """
-    def func(df: pl.DataFrame) -> Optional[pl.DataFrame]:
-        if "event_type" not in df.columns:
-            return None
-        if "timestamp" in df.columns:
-            df2 = df.with_columns(
-                pl.col("timestamp").str.to_datetime(strict=False).dt.hour().alias("_hour")
-            )
-        else:
-            df2 = df.with_columns(pl.lit(0).alias("_hour"))
-        return df2.group_by(["_hour", "event_type"]).agg(pl.len().alias("count"))
-    return run_polars_operation(func, csv_path, cached_df)
-
-def duckdb_timeseries(csv_path: str) -> pd.DataFrame:
-    """
-    Extract hour from timestamp, group by (hour, event_type), count.
-    """
+def duckdb_timeseries(csv_path: str, cached_df: Optional[Any] = None) -> pd.DataFrame:
+    """Extract hour from timestamp, group by (hour, event_type), count. (cached_df unused for consistency)"""
     def operation(path: str, conn: duckdb.DuckDBPyConnection) -> pd.DataFrame:
         fmt = detect_file_format(Path(path))
         source = f"read_parquet('{path}')" if fmt == 'parquet' else f"read_csv_auto('{path}')"
@@ -519,13 +359,150 @@ def duckdb_timeseries(csv_path: str) -> pd.DataFrame:
                 FROM {source}
                 GROUP BY event_type
             """).fetchdf()
-    from utils import run_duckdb_operation
     return run_duckdb_operation(operation, csv_path)
 
+# Operation 1: Filter and Group (aligned with benchmark.py) - CACHING AWARE ONLY
+def pandas_filter_group(csv_path: str, cached_df: Optional[pd.DataFrame] = None) -> pd.Series:
+    """Filter bytes > 1000, group by event_type, count."""
+    def op(df: pd.DataFrame) -> Optional[pd.Series]:
+        if "bytes" not in df.columns or "event_type" not in df.columns:
+            return None
+        filtered = df[df["bytes"] > 1000]
+        return filtered.groupby("event_type", observed=False).size()
+    return run_pandas_operation(op, csv_path, cached_df)
+
+def polars_filter_group(csv_path: str, cached_df: Optional[pl.DataFrame] = None) -> pl.DataFrame:
+    """Filter bytes > 1000, group by event_type, count."""
+    def func(df: pl.DataFrame) -> Optional[pl.DataFrame]:
+        if not {"bytes", "event_type"}.issubset(set(df.columns)):
+            return None
+        return df.filter(pl.col("bytes") > 1000).group_by("event_type").agg(pl.len().alias("count"))
+    return run_polars_operation(func, csv_path, cached_df)
+
+def fireducks_filter_group(csv_path: str, cached_df: Optional[pd.DataFrame] = None) -> pd.Series:
+    """Filter bytes > 1000, group by event_type, count."""
+    def op(df: pd.DataFrame) -> Optional[pd.Series]:
+        if "bytes" not in df.columns or "event_type" not in df.columns:
+            return None
+        return df[df["bytes"] > 1000].groupby("event_type").size()
+    return run_pandas_operation(op, csv_path, cached_df)
+
+# Operation 2: Statistical Analysis (aligned with benchmark.py) - CACHING AWARE ONLY
+def pandas_statistics(csv_path: str, cached_df: Optional[pd.DataFrame] = None) -> pd.DataFrame:
+    """Group by event_type, mean/min/max for bytes, response_time_ms, risk_score."""
+    def op(df: pd.DataFrame) -> Optional[pd.DataFrame]:
+        req = {"event_type", "bytes", "response_time_ms", "risk_score"}
+        if not req.issubset(df.columns):
+            return None
+        return df.groupby("event_type", observed=False).agg({
+            "bytes": ["mean", "min", "max"],
+            "response_time_ms": ["mean", "min", "max"],
+            "risk_score": ["mean", "min", "max"]
+        })
+    return run_pandas_operation(op, csv_path, cached_df)
+
+def polars_statistics(csv_path: str, cached_df: Optional[pl.DataFrame] = None) -> pl.DataFrame:
+    """Group by event_type, mean/min/max for bytes, response_time_ms, risk_score."""
+    def func(df: pl.DataFrame) -> Optional[pl.DataFrame]:
+        req = {"event_type", "bytes", "response_time_ms", "risk_score"}
+        if not req.issubset(set(df.columns)):
+            return None
+        return df.group_by("event_type").agg([
+            pl.col("bytes").mean().alias("bytes_mean"),
+            pl.col("bytes").min().alias("bytes_min"),
+            pl.col("bytes").max().alias("bytes_max"),
+            pl.col("response_time_ms").mean().alias("response_time_ms_mean"),
+            pl.col("response_time_ms").min().alias("response_time_ms_min"),
+            pl.col("response_time_ms").max().alias("response_time_ms_max"),
+            pl.col("risk_score").mean().alias("risk_score_mean"),
+            pl.col("risk_score").min().alias("risk_score_min"),
+            pl.col("risk_score").max().alias("risk_score_max")
+        ])
+    return run_polars_operation(func, csv_path, cached_df)
+
+def fireducks_statistics(csv_path: str, cached_df: Optional[pd.DataFrame] = None) -> pd.DataFrame:
+    """Group by event_type, mean/min/max for bytes, response_time_ms, risk_score."""
+    def op(df: pd.DataFrame) -> Optional[pd.DataFrame]:
+        req = {"event_type", "bytes", "response_time_ms", "risk_score"}
+        if not req.issubset(df.columns):
+            return None
+        return df.groupby("event_type").agg({
+            "bytes": ["mean", "min", "max"],
+            "response_time_ms": ["mean", "min", "max"],
+            "risk_score": ["mean", "min", "max"]
+        })
+    return run_pandas_operation(op, csv_path, cached_df)
+
+# Operation 3: Complex Join (aligned with benchmark.py) - CACHING AWARE ONLY
+def pandas_complex_join(csv_path: str, cached_df: Optional[pd.DataFrame] = None) -> pd.DataFrame:
+    """Sum bytes by source_ip, join back, rank by total_bytes per event_type, top 10."""
+    def op(df: pd.DataFrame) -> Optional[pd.DataFrame]:
+        req = {"source_ip", "bytes", "event_type"}
+        if not req.issubset(df.columns):
+            return None
+        summary = df.groupby("source_ip", observed=False)["bytes"].sum().reset_index().rename(columns={"bytes": "total_bytes"})
+        merged = df.merge(summary, on="source_ip", how="left")
+        merged["total_rank"] = merged.groupby("event_type", observed=False)["total_bytes"].rank(method="dense", ascending=False)
+        return merged.loc[merged["total_rank"] <= 10]
+    return run_pandas_operation(op, csv_path, cached_df)
+
+def polars_complex_join(csv_path: str, cached_df: Optional[pl.DataFrame] = None) -> pl.DataFrame:
+    """Sum bytes by source_ip, join back, rank by total_bytes per event_type, top 10."""
+    def func(df: pl.DataFrame) -> Optional[pl.DataFrame]:
+        if not {"source_ip", "bytes", "event_type"}.issubset(set(df.columns)):
+            return None
+        summary = df.group_by("source_ip").agg(pl.col("bytes").sum().alias("total_bytes"))
+        joined = df.join(summary, on="source_ip", how="left")
+        ranked = joined.with_columns(
+            pl.col("total_bytes").rank("dense", descending=True).over("event_type").alias("total_rank")
+        )
+        return ranked.filter(pl.col("total_rank") <= 10)
+    return run_polars_operation(func, csv_path, cached_df)
+
+def fireducks_complex_join(csv_path: str, cached_df: Optional[pd.DataFrame] = None) -> pd.DataFrame:
+    """Sum bytes by source_ip, join back, rank by total_bytes per event_type, top 10."""
+    def op(df: pd.DataFrame) -> Optional[pd.DataFrame]:
+        req = {"source_ip", "bytes", "event_type"}
+        if not req.issubset(df.columns):
+            return None
+        summary = df.groupby("source_ip")["bytes"].sum().reset_index().rename(columns={"bytes": "total_bytes"})
+        merged = df.merge(summary, on="source_ip", how="left")
+        merged["total_rank"] = merged.groupby("event_type")["total_bytes"].rank(method="dense", ascending=False)
+        return merged[merged["total_rank"] <= 10]
+    return run_pandas_operation(op, csv_path, cached_df)
+
+# Operation 4: Time Series (aligned with benchmark.py) - CACHING AWARE ONLY
+def pandas_timeseries(csv_path: str, cached_df: Optional[pd.DataFrame] = None) -> pd.Series:
+    """Extract hour from timestamp, group by (hour, event_type), count."""
+    def op(df: pd.DataFrame) -> Optional[pd.Series]:
+        if "event_type" not in df.columns:
+            return None
+        work = df.copy()
+        if "timestamp" in work.columns:
+            ts = pd.to_datetime(work["timestamp"], errors="coerce")
+            hour = ts.dt.hour
+        else:
+            hour = 0
+        work = work.assign(_hour=hour)
+        return work.groupby(["_hour", "event_type"], observed=False).size()
+    return run_pandas_operation(op, csv_path, cached_df)
+
+def polars_timeseries(csv_path: str, cached_df: Optional[pl.DataFrame] = None) -> pl.DataFrame:
+    """Extract hour from timestamp, group by (hour, event_type), count."""
+    def func(df: pl.DataFrame) -> Optional[pl.DataFrame]:
+        if "event_type" not in df.columns:
+            return None
+        if "timestamp" in df.columns:
+            df2 = df.with_columns(
+                pl.col("timestamp").str.to_datetime(strict=False).dt.hour().alias("_hour")
+            )
+        else:
+            df2 = df.with_columns(pl.lit(0).alias("_hour"))
+        return df2.group_by(["_hour", "event_type"]).agg(pl.len().alias("count"))
+    return run_polars_operation(func, csv_path, cached_df)
+
 def fireducks_timeseries(csv_path: str, cached_df: Optional[pd.DataFrame] = None) -> pd.Series:
-    """
-    Extract hour from timestamp, group by (hour, event_type), count.
-    """
+    """Extract hour from timestamp, group by (hour, event_type), count."""
     def op(df: pd.DataFrame) -> Optional[pd.Series]:
         if "event_type" not in df.columns:
             return None
@@ -538,11 +515,9 @@ def fireducks_timeseries(csv_path: str, cached_df: Optional[pd.DataFrame] = None
         return tmp.groupby(["_hour", "event_type"]).size()
     return run_pandas_operation(op, csv_path, cached_df)
 
-# Benchmark runner with single-load caching
+# Benchmark runner with single-load caching - LIBRARY BY LIBRARY EXECUTION
 def run_library_benchmarks(library_name: str, csv_path: str, repeat: int = 1) -> dict:
-    """
-    Execute all benchmark operations for a single library with single-load caching.
-    """
+    """Execute all benchmark operations for a single library with single-load caching."""
     operations = {}
     for op in ["filter_group", "statistics", "complex_join", "timeseries"]:
         fn = f"{library_name}_{op}"
@@ -588,39 +563,66 @@ def run_library_benchmarks(library_name: str, csv_path: str, repeat: int = 1) ->
 
     return out
 
-def run_all_benchmarks(csv_path: str, repeat: int = 1) -> dict:
-    """Run benchmarks for all available libraries."""
-    libraries = ["pandas", "polars", "duckdb"]
-    if FIREDUCKS_AVAILABLE:
-        libraries.append("fireducks")
-    results: dict = {}
-    for lib in libraries:
-        print(f"\n{'='*50}\nRunning benchmarks for {lib.upper()}...\n{'='*50}")
-        lib_results = run_library_benchmarks(lib, csv_path, repeat)
-        if lib_results:
-            results[lib] = lib_results
-    return results
-
 def run_benchmark_operation(library_name: str,
                             operation_func: Callable,
                             operation_name: str,
                             csv_path: str) -> Optional[float]:
-    """
-    Time a single operation.
-    """
+    """Time a single operation with proper FireDucks handling."""
     try:
+        # Check if this is a FireDucks operation when FireDucks is not available
+        if library_name.lower() == "fireducks" and not FIREDUCKS_AVAILABLE:
+            print(f"{library_name} {operation_name} duration: 0.00s")
+            return 0.0  # Return 0.0 for unavailable libraries
+        
         start = time.perf_counter()
         result = operation_func(csv_path)
         duration = time.perf_counter() - start
+        
         print(f"{library_name} {operation_name} duration: {duration:.2f}s")
+        
+        # If operation failed, return None (not 0.0)
         if result is None:
             return None
-        return max(duration, 1e-6)
+        
+        return duration  # Return actual duration, no artificial minimum
+        
     except Exception as e:
         print(f"{library_name} {operation_name} failed: {e}")
-        return None
+        return None  # Failed operations return None
 
-# CSV saving function (unchanged, matches other modules)
+def run_all_benchmarks(csv_path: str, repeat: int = 1) -> dict:
+    """Run benchmarks using library-by-library execution with proper caching."""
+    libraries = ["pandas", "polars", "duckdb"]
+    if FIREDUCKS_AVAILABLE:
+        libraries.append("fireducks")
+    
+    # Store results by library, then reorganize by operation
+    library_results = {}
+    
+    for library_name in libraries:
+        print(f"\n{'='*50}")
+        print(f"Running {library_name.upper()} benchmarks...")
+        print(f"{'='*50}")
+        
+        lib_results = run_library_benchmarks(library_name, csv_path, repeat)
+        if lib_results:
+            library_results[library_name] = lib_results
+    
+    # Reorganize results by operation -> library (to maintain output format)
+    results = {}
+    operations = ["filter_group", "statistics", "complex_join", "timeseries"]
+    
+    for operation in operations:
+        results[operation] = {}
+        for library_name in libraries:
+            if library_name in library_results:
+                results[operation][library_name] = library_results[library_name].get(operation)
+            else:
+                results[operation][library_name] = None
+    
+    return results
+
+# CSV saving function - NO SAFE_VALUE NEEDED
 def save_results_to_csv(results: dict, host_info: dict, script_name: str, dataset_size: int) -> None:
     """
     Save benchmark results to CSV file with error handling.
@@ -680,380 +682,17 @@ def save_results_to_csv(results: dict, host_info: dict, script_name: str, datase
                 dataset_size, ds_name, ds_fmt,
             ]
             
-            # Append timing values with explicit handling for None/invalid values
+            # Append timing values directly - CSV writer handles None as empty strings
             for op in ["filter_group", "statistics", "complex_join", "timeseries"]:
                 for lib in ["pandas", "polars", "duckdb", "fireducks"]:
                     val = results.get(op, {}).get(lib)
-                    if val is None or (isinstance(val, float) and (np.isnan(val) or val <= 0)):
-                        row.append("")  # Blank for missing/unavailable
-                    else:
-                        row.append(f"{val}")  # High precision
-            
-            row.append(script_name)  # Moved to the end
+                    row.append(val)  # Let CSV writer handle None -> empty string
+    
+            row.append(script_name)
             writer.writerow(row)
         print(f"Results saved to {RESULTS_CSV_PATH}")
     except Exception as e:
         print(f"Error saving results to CSV: {e}")
-        
-# Operation 1: Filter and Group (Original)
-def pandas_filter_group():
-    df = cast(pd.DataFrame, read_file_universal(DATASET_PATH, library='pandas'))
-    return df[df["status_code"] == 200].groupby("source_ip").agg({"bytes": "sum"})
-
-def polars_filter_group():
-    df = cast(pl.DataFrame, read_file_universal(DATASET_PATH, library='polars'))
-    return (df.filter(pl.col("status_code") == 200)
-             .group_by("source_ip")
-             .agg(pl.sum("bytes")))
-
-def duckdb_filter_group():
-    conn = duckdb.connect()
-    
-    # DuckDB can read various formats - we'll use the automatic detection
-    file_format = detect_file_format(DATASET_PATH)
-    
-    if file_format == 'parquet':
-        result = conn.execute(f"""
-            SELECT source_ip, SUM(bytes) as bytes
-            FROM read_parquet('{DATASET_PATH}')
-            WHERE status_code = 200
-            GROUP BY source_ip
-        """).fetchdf()
-    else:
-        result = conn.execute(f"""
-            SELECT source_ip, SUM(bytes) as bytes
-            FROM read_csv_auto('{DATASET_PATH}')
-            WHERE status_code = 200
-            GROUP BY source_ip
-        """).fetchdf()
-    
-    conn.close()
-    return result
-
-def fireducks_filter_group():
-    if not FIREDUCKS_AVAILABLE:
-        return None
-    df = cast(pd.DataFrame, read_file_universal(DATASET_PATH, library='pandas'))  # Use pandas fallback for FireDucks
-    return df[df["status_code"] == 200].groupby("source_ip").agg({"bytes": "sum"})
-
-# Operation 2: Statistical Analysis
-def pandas_stats():
-    df = cast(pd.DataFrame, read_file_universal(DATASET_PATH, library='pandas'))
-    return df.groupby("event_type").agg({
-        "bytes": ["mean", "std", "min", "max"],
-        "response_time_ms": ["mean", "median"],
-        "risk_score": ["mean", "std"]
-    })
-
-def polars_stats():
-    df = cast(pl.DataFrame, read_file_universal(DATASET_PATH, library='polars'))
-    return (df.group_by("event_type")
-             .agg([
-                 pl.col("bytes").mean().alias("bytes_mean"),
-                 pl.col("bytes").std().alias("bytes_std"),
-                 pl.col("bytes").min().alias("bytes_min"),
-                 pl.col("bytes").max().alias("bytes_max"),
-                 pl.col("response_time_ms").mean().alias("response_time_ms_mean"),
-                 pl.col("response_time_ms").median().alias("response_time_ms_median"),
-                 pl.col("risk_score").mean().alias("risk_score_mean"),
-                 pl.col("risk_score").std().alias("risk_score_std")
-             ]))
-
-def duckdb_stats():
-    conn = duckdb.connect()
-    
-    file_format = detect_file_format(DATASET_PATH)
-    
-    if file_format == 'parquet':
-        result = conn.execute(f"""
-            SELECT event_type,
-                   AVG(bytes) as bytes_mean,
-                   STDDEV(bytes) as bytes_std,
-                   MIN(bytes) as bytes_min,
-                   MAX(bytes) as bytes_max,
-                   AVG(response_time_ms) as response_time_ms_mean,
-                   MEDIAN(response_time_ms) as response_time_ms_median,
-                   AVG(risk_score) as risk_score_mean,
-                   STDDEV(risk_score) as risk_score_std
-            FROM read_parquet('{DATASET_PATH}')
-            GROUP BY event_type
-        """).fetchdf()
-    else:
-        result = conn.execute(f"""
-            SELECT event_type,
-                   AVG(bytes) as bytes_mean,
-                   STDDEV(bytes) as bytes_std,
-                   MIN(bytes) as bytes_min,
-                   MAX(bytes) as bytes_max,
-                   AVG(response_time_ms) as response_time_ms_mean,
-                   MEDIAN(response_time_ms) as response_time_ms_median,
-                   AVG(risk_score) as risk_score_mean,
-                   STDDEV(risk_score) as risk_score_std
-            FROM read_csv_auto('{DATASET_PATH}')
-            GROUP BY event_type
-        """).fetchdf()
-    
-    conn.close()
-    return result
-
-def fireducks_stats():
-    if not FIREDUCKS_AVAILABLE:
-        return None
-    df = cast(pd.DataFrame, read_file_universal(DATASET_PATH, library='pandas'))  # Use pandas fallback
-    return df.groupby("event_type").agg({
-        "bytes": ["mean", "std", "min", "max"],
-        "response_time_ms": ["mean", "median"],
-        "risk_score": ["mean", "std"]
-    })
-
-# Operation 3: Complex Join and Window Functions
-def pandas_complex():
-    df = cast(pd.DataFrame, read_file_universal(DATASET_PATH, library='pandas'))
-    # Create a summary table and join back
-    summary = df.groupby("source_ip").agg({"bytes": "sum", "response_time_ms": "mean", "risk_score": "mean"}).reset_index()
-    summary.columns = ["source_ip", "total_bytes", "avg_response_time_ms", "avg_risk_score"]
-    result = df.merge(summary, on="source_ip")
-    # Add window function - rank by bytes within each event_type
-    result["bytes_rank"] = result.groupby("event_type")["bytes"].rank(method="dense", ascending=False)
-    return result[result["bytes_rank"] <= 10]  # Top 10 by bytes per event_type
-
-def polars_complex():
-    df = cast(pl.DataFrame, read_file_universal(DATASET_PATH, library='polars'))
-    summary = (df.group_by("source_ip")
-                .agg([pl.col("bytes").sum().alias("total_bytes"),
-                      pl.col("response_time_ms").mean().alias("avg_response_time_ms"),
-                      pl.col("risk_score").mean().alias("avg_risk_score")]))
-    result = df.join(summary, on="source_ip")
-    result = result.with_columns([
-        pl.col("bytes").rank(method="dense", descending=True).over("event_type").alias("bytes_rank")
-    ])
-    return result.filter(pl.col("bytes_rank") <= 10)
-
-def duckdb_complex():
-    conn = duckdb.connect()
-    
-    file_format = detect_file_format(DATASET_PATH)
-    
-    if file_format == 'parquet':
-        result = conn.execute(f"""
-            WITH summary AS (
-                SELECT source_ip,
-                       SUM(bytes) as total_bytes,
-                       AVG(response_time_ms) as avg_response_time_ms,
-                       AVG(risk_score) as avg_risk_score
-                FROM read_parquet('{DATASET_PATH}')
-                GROUP BY source_ip
-            ),
-            ranked AS (
-                SELECT d.*, s.total_bytes, s.avg_response_time_ms, s.avg_risk_score,
-                       DENSE_RANK() OVER (PARTITION BY d.event_type ORDER BY d.bytes DESC) as bytes_rank
-                FROM read_parquet('{DATASET_PATH}') d
-                JOIN summary s ON d.source_ip = s.source_ip
-            )
-            SELECT * FROM ranked WHERE bytes_rank <= 10
-        """).fetchdf()
-    else:
-        result = conn.execute(f"""
-            WITH summary AS (
-                SELECT source_ip,
-                       SUM(bytes) as total_bytes,
-                       AVG(response_time_ms) as avg_response_time_ms,
-                       AVG(risk_score) as avg_risk_score
-                FROM read_csv_auto('{DATASET_PATH}')
-                GROUP BY source_ip
-            ),
-            ranked AS (
-                SELECT d.*, s.total_bytes, s.avg_response_time_ms, s.avg_risk_score,
-                       DENSE_RANK() OVER (PARTITION BY d.event_type ORDER BY d.bytes DESC) as bytes_rank
-                FROM read_csv_auto('{DATASET_PATH}') d
-                JOIN summary s ON d.source_ip = s.source_ip
-            )
-            SELECT * FROM ranked WHERE bytes_rank <= 10
-        """).fetchdf()
-    
-    conn.close()
-    return result
-
-def fireducks_complex():
-    if not FIREDUCKS_AVAILABLE:
-        return None
-    df = cast(pd.DataFrame, read_file_universal(DATASET_PATH, library='pandas'))  # Use pandas fallback
-    summary = df.groupby("source_ip").agg({"bytes": "sum", "response_time_ms": "mean", "risk_score": "mean"}).reset_index()
-    summary.columns = ["source_ip", "total_bytes", "avg_response_time_ms", "avg_risk_score"]
-    result = df.merge(summary, on="source_ip")
-    result["bytes_rank"] = result.groupby("event_type")["bytes"].rank(method="dense", ascending=False)
-    return result[result["bytes_rank"] <= 10]
-
-# Operation 4: Time Series Analysis (if timestamp column exists)
-def pandas_timeseries():
-    df = cast(pd.DataFrame, read_file_universal(DATASET_PATH, library='pandas'))
-    if 'timestamp' in df.columns:
-        df['timestamp'] = pd.to_datetime(df['timestamp'])
-        df['hour'] = df['timestamp'].dt.hour
-        return df.groupby(['hour', 'event_type']).agg({
-            'bytes': ['sum', 'count'],
-            'response_time_ms': 'mean',
-            'risk_score': 'mean'
-        })
-    else:
-        # Fallback: analyze by status_code patterns
-        return df.groupby(['status_code', 'event_type']).size().reset_index(name='count')
-
-def polars_timeseries():
-    df = cast(pl.DataFrame, read_file_universal(DATASET_PATH, library='polars'))
-    if 'timestamp' in df.columns:
-        df = df.with_columns([
-            pl.col('timestamp').str.strptime(pl.Datetime).alias('timestamp_parsed'),
-        ]).with_columns([
-            pl.col('timestamp_parsed').dt.hour().alias('hour')
-        ])
-        return df.group_by(['hour', 'event_type']).agg([
-            pl.col('bytes').sum().alias('bytes_sum'),
-            pl.col('bytes').count().alias('bytes_count'),
-            pl.col('response_time_ms').mean().alias('response_time_ms_mean'),
-            pl.col('risk_score').mean().alias('risk_score_mean')
-        ])
-    else:
-        return df.group_by(['status_code', 'event_type']).len()
-
-def duckdb_timeseries():
-    conn = duckdb.connect()
-    
-    file_format = detect_file_format(DATASET_PATH)
-    
-    # First check if timestamp column exists
-    try:
-        if file_format == 'parquet':
-            result = conn.execute(f"""
-                SELECT EXTRACT(hour FROM CAST(timestamp AS TIMESTAMP)) as hour,
-                       event_type,
-                       SUM(bytes) as bytes_sum,
-                       COUNT(bytes) as bytes_count,
-                       AVG(response_time_ms) as response_time_ms_mean,
-                       AVG(risk_score) as risk_score_mean
-                FROM read_parquet('{DATASET_PATH}')
-                GROUP BY hour, event_type
-                ORDER BY hour, event_type
-            """).fetchdf()
-        else:
-            result = conn.execute(f"""
-                SELECT EXTRACT(hour FROM CAST(timestamp AS TIMESTAMP)) as hour,
-                       event_type,
-                       SUM(bytes) as bytes_sum,
-                       COUNT(bytes) as bytes_count,
-                       AVG(response_time_ms) as response_time_ms_mean,
-                       AVG(risk_score) as risk_score_mean
-                FROM read_csv_auto('{DATASET_PATH}')
-                GROUP BY hour, event_type
-                ORDER BY hour, event_type
-            """).fetchdf()
-        return result
-    except:
-        # Fallback if no timestamp column
-        if file_format == 'parquet':
-            fallback_result = conn.execute(f"""
-                SELECT status_code, event_type, COUNT(*) as count
-                FROM read_parquet('{DATASET_PATH}')
-                GROUP BY status_code, event_type
-            """).fetchdf()
-        else:
-            fallback_result = conn.execute(f"""
-                SELECT status_code, event_type, COUNT(*) as count
-                FROM read_csv_auto('{DATASET_PATH}')
-                GROUP BY status_code, event_type
-            """).fetchdf()
-        return fallback_result
-    finally:
-        conn.close()
-
-def fireducks_timeseries():
-    if not FIREDUCKS_AVAILABLE:
-        return None
-    df = cast(pd.DataFrame, read_file_universal(DATASET_PATH, library='pandas'))  # Use pandas fallback
-    if 'timestamp' in df.columns:
-        df['timestamp'] = pd.to_datetime(df['timestamp'])  # FireDucks uses pandas datetime
-        df['hour'] = df['timestamp'].dt.hour
-        return df.groupby(['hour', 'event_type']).agg({
-            'bytes': ['sum', 'count'],
-            'response_time_ms': 'mean',
-            'risk_score': 'mean'
-        })
-    else:
-        # Fallback: analyze by status_code patterns
-        return df.groupby(['status_code', 'event_type']).size().reset_index(name='count')
-
-def run_all_benchmarks():
-    """Run all benchmarks for all available libraries with error handling"""
-    try:
-        libraries = ["pandas", "polars", "duckdb"]
-        if FIREDUCKS_AVAILABLE:
-            libraries.append("fireducks")
-        
-        operations = {
-            "filter_group": {
-                "pandas": pandas_filter_group,
-                "polars": polars_filter_group,
-                "duckdb": duckdb_filter_group,
-                "fireducks": fireducks_filter_group
-            },
-            "statistics": {
-                "pandas": pandas_stats,
-                "polars": polars_stats,
-                "duckdb": duckdb_stats,
-                "fireducks": fireducks_stats
-            },
-            "complex_join": {
-                "pandas": pandas_complex,
-                "polars": polars_complex,
-                "duckdb": duckdb_complex,
-                "fireducks": fireducks_complex
-            },
-            "timeseries": {
-                "pandas": pandas_timeseries,
-                "polars": polars_timeseries,
-                "duckdb": duckdb_timeseries,
-                "fireducks": fireducks_timeseries
-            }
-        }
-        
-        results = {}
-        for operation_name, operation_funcs in operations.items():
-            print(f"\n{'='*50}")
-            print(f"Running {operation_name.upper()} benchmarks...")
-            print(f"{'='*50}")
-            
-            operation_results = {}
-            for library_name, func in operation_funcs.items():
-                duration, _ = run_benchmark_operation(library_name, func, operation_name)
-                operation_results[library_name] = duration
-            
-            results[operation_name] = operation_results
-        
-        return results
-    except Exception as e:
-        print(f"Error running benchmarks: {e}")
-        return {}
-
-def run_benchmark_operation(library_name, operation_func, operation_name):
-    """Generic benchmark runner that returns timing information with error handling"""
-    try:
-        # Check if this is a FireDucks operation when FireDucks is not available
-        if library_name.lower() == "fireducks" and not FIREDUCKS_AVAILABLE:
-            print(f"{library_name} {operation_name} duration: 0.00s")
-            return 0.0, None  # Return 0.0 instead of None for duration
-        
-        start = time.time()
-        
-        result = operation_func()
-            
-        duration = time.time() - start
-        print(f"{library_name} {operation_name} duration: {duration:.2f}s")
-        return duration, result
-    except Exception as e:
-        print(f"{library_name} {operation_name} failed: {e}")
-        return None, None
-
-# ... (Keep the rest of your functions unchanged) ...
 
 if __name__ == "__main__":
     try:
@@ -1114,7 +753,7 @@ if __name__ == "__main__":
         dataset_size = get_dataset_size(DATASET_PATH)
         print(f"Dataset size: {dataset_size:,} records")
 
-        results = run_all_benchmarks()
+        results = run_all_benchmarks(str(DATASET_PATH))
 
         # Save results to CSV
         print(f"\n{'='*50}")
@@ -1122,7 +761,7 @@ if __name__ == "__main__":
         print(f"{'='*50}")
         save_results_to_csv(results, host_info, script_name, dataset_size)
 
-        # Print summary
+        # Print summary - EXCLUDE ZERO DURATIONS FROM COMPARISON
         print(f"\n{'='*50}")
         print("BENCHMARK SUMMARY")
         print(f"{'='*50}")

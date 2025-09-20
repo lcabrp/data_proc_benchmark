@@ -163,13 +163,14 @@ class ModularBenchmark:
             from utils.useful_functions import df_memory_usage
             original_mem = df_memory_usage(df)
             original_memory = original_mem['Total']
-            print(f"  Original memory usage:\n{original_memory}")
+
+            print(f"  Original memory usage: {original_memory/1024/1024:.1f}MB")
             
             opt = self.optimize_benchmark_df(df)
             
             optimized_mem = df_memory_usage(opt)
             optimized_memory = optimized_mem['Total']
-            print(f"  Optimized memory usage:\n{optimized_memory}")
+            print(f"  Optimized memory usage: {optimized_memory/1024/1024:.1f}MB")
             
             memory_reduction = (original_memory - optimized_memory) / original_memory * 100
             print(f"  pandas DataFrame optimized: {memory_reduction:.1f}% memory reduction ({original_memory/1024/1024:.1f}MB → {optimized_memory/1024/1024:.1f}MB)")
