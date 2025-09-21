@@ -84,13 +84,19 @@ def generate_logs(n=1_000_000):
     }
     
     df = pd.DataFrame(data)
-    df.to_csv("data/synthetic_logs_8M.csv", index=False)
-    print(f"Generated {n} realistic synthetic logs with {len(data)} columns.")
     return df
 
 if __name__ == "__main__":
-    df = generate_logs(n=8_000_000)
+    import argparse
+    parser = argparse.ArgumentParser(description="Generate synthetic log data for benchmarking.")
+    parser.add_argument('-r', '--rows', type=int, default=10_000_000, help='Number of records to generate (default: 10,000,000)')
+    parser.add_argument('-o', '--output', type=str, default="data/raw/synthetic_logs_10M.csv", help='Output CSV file path')
+    args = parser.parse_args()
+
+    df = generate_logs(n=args.rows)
+    df.to_csv(args.output, index=False)
+    print(f"Generated {args.rows} realistic synthetic logs with {df.shape[1]} columns.")
     print(f"Dataset shape: {df.shape}")
     print(f"Memory usage: {df.memory_usage(deep=True).sum() / 1024**2:.1f} MB")
     del df  # Clean up to free memory
-    print("Log generation complete.")
+    print(f"Log generation complete. Output written to {args.output}")
