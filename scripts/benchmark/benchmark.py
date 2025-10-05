@@ -80,7 +80,7 @@ def load_and_optimize_for_library(library: str):
     print(f"\nLoading and optimizing data for {library}...")
     
     try:
-        # Read the data using existing utility function
+        # Read the data using existing utility function (now supports fireducks!)
         df = read_data(cast(Path, DATASET_PATH), library=library)
         
         if df is None:

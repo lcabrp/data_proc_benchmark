@@ -56,6 +56,28 @@ if platform.system() in ['Linux', 'Darwin']:
 
 from utils import optimize_df_types
 
+def get_result_shape(result):
+    """Return shape tuple or descriptive string for any result object."""
+    try:
+        if result is None:
+            return 'None'
+        elif hasattr(result, 'shape'):
+            return result.shape
+        elif hasattr(result, '__len__'):
+            try:
+                length = len(result)
+                # For pandas Series, we can get more info
+                if hasattr(result, 'dtype'):
+                    return f'({length},)'
+                else:
+                    return f'({length},)'
+            except Exception:
+                return 'N/A'
+        else:
+            return 'N/A'
+    except Exception:
+        return 'N/A'
+        
 class ModularBenchmark:
     """
     Modular benchmark class that demonstrates reusable design patterns.
@@ -528,6 +550,7 @@ class ModularBenchmark:
         
         return results
     
+
     def run_operation(self, operation_name: str, library: str, cached_df=None) -> Dict[str, Any]:
         """
         Run a benchmark operation with specified library and cached DataFrame.
@@ -563,36 +586,45 @@ class ModularBenchmark:
             proc = psutil.Process(os.getpid())
             rss_before = proc.memory_info().rss
             start_time = time.perf_counter()
+            
+            # Execute the operation
             result = operation_func(cached_df) if cached_df is not None else operation_func()
-            # Capture shape then aggressively free intermediates inside operation by copying small head if large
-            result_shape = None
+            
+            end_time = time.perf_counter()
+            execution_time = end_time - start_time
+            
+            # Get result shape using robust helper function
+            result_shape = get_result_shape(result)
+            
+            # Handle large results by keeping only a small sample
             small_result = None
-            try:
-                if hasattr(result, 'shape'):
-                    result_shape = result.shape  # type: ignore[attr-defined]
-                    # If result seems large (many rows) keep only first 10 rows to reduce retained memory
-                    if hasattr(result, 'head') and result_shape and result_shape[0] and result_shape[0] > 1000:
-                        try:
-                            small_result = result.head(10)  # type: ignore[call-arg]
-                        except Exception:
-                            small_result = None
-                elif hasattr(result, '__len__'):
-                    result_shape = (len(result),)
-            except Exception:
-                pass
-            # Drop original large result if we created a trimmed version
+            if hasattr(result, 'shape') and result.shape and len(result.shape) > 0 and result.shape[0] > 1000:
+                try:
+                    if hasattr(result, 'head'):
+                        small_result = result.head(10)
+                    elif hasattr(result, 'limit'):  # Polars
+                        small_result = result.limit(10)
+                    else:
+                        # For other types, try to slice
+                        small_result = result[:10] if hasattr(result, '__getitem__') else None
+                except Exception:
+                    small_result = None
+        
+            # Replace large result with trimmed version if successful
             if small_result is not None:
                 try:
                     del result
                 except Exception:
                     pass
                 result = small_result
-            end_time = time.perf_counter()
-            execution_time = end_time - start_time
+        
+            # Calculate memory usage
             rss_after = proc.memory_info().rss
             delta_mb = (rss_after - rss_before) / (1024**2)
-            # Force GC to return memory sooner
+            
+            # Force garbage collection
             gc.collect()
+            
             return {
                 'status': 'success',
                 'execution_time': execution_time,

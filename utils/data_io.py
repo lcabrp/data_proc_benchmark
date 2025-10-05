@@ -6,15 +6,19 @@ and data processing libraries. Designed for reusability and extensibility.
 
 Features:
 - Auto-detection of file formats (CSV, Parquet, JSON, NDJSON, compressed)
-- Support for multiple data libraries (pandas, polars, modin, duckdb)
+- Support for multiple data libraries (pandas, polars, duckdb, fireducks)
 - Compression handling (gzip, zip, zstandard)
 - Memory-efficient reading with optional column selection
 - Robust error handling and fallbacks
 """
 
+import pandas as pd
+import polars as pl
+import duckdb
 from pathlib import Path
 from typing import Union, Any, Optional, List, Dict
 import warnings
+import platform
 
 
 class UniversalDataReader:
@@ -23,7 +27,7 @@ class UniversalDataReader:
     
     Design Philosophy:
     - Format-agnostic: automatically detect and handle different file formats
-    - Library-agnostic: work with pandas, polars, modin, duckdb
+    - Library-agnostic: work with pandas, polars, duckdb, fireducks
     - Compression-aware: handle .gz, .zip, .zst transparently
     - Performance-oriented: optimize for large datasets
     - Error-resilient: graceful fallbacks and clear error messages
@@ -45,7 +49,7 @@ class UniversalDataReader:
         Initialize the universal data reader.
         
         Args:
-            default_library: Default library to use ('pandas', 'polars', 'modin')
+            default_library: Default library to use ('pandas', 'polars', 'duckdb', 'fireducks')
         """
         self.default_library = default_library
         self._check_library_availability()
@@ -67,16 +71,18 @@ class UniversalDataReader:
             pass
             
         try:
-            import modin.pandas as mpd
-            self.available_libraries['modin'] = mpd
-        except ImportError:
-            pass
-            
-        try:
             import duckdb
             self.available_libraries['duckdb'] = duckdb
         except ImportError:
             pass
+        
+        # FireDucks: Linux/macOS only
+        if platform.system() in ["Linux", "Darwin"]:
+            try:
+                import fireducks.pandas as fpd
+                self.available_libraries['fireducks'] = fpd
+            except ImportError:
+                pass
     
     def detect_file_format(self, file_path: Path) -> str:
         """
@@ -134,7 +140,7 @@ class UniversalDataReader:
         
         Args:
             file_path: Path to the file to read
-            library: Library to use ('pandas', 'polars', 'modin', 'duckdb')
+            library: Library to use ('pandas', 'polars', 'duckdb', 'fireducks')
             usecols: Columns to read (for CSV/Parquet)
             nrows: Number of rows to read (for testing)
             **kwargs: Additional arguments passed to the reading function
@@ -173,114 +179,138 @@ class UniversalDataReader:
             else:
                 raise
     
-    def _read_with_library(self, file_path: Path, library: str, file_format: str, 
-                          usecols: Optional[List[str]], nrows: Optional[int], **kwargs):
+    def _read_with_library(self, file_path: Path, library: str, file_format: str,
+                           usecols: Optional[List[str]], nrows: Optional[int], **kwargs):
         """Read file with specific library and format."""
         lib = self.available_libraries[library]
-        
-        # Prepare common arguments
+
         read_kwargs = kwargs.copy()
         if usecols is not None:
             read_kwargs['usecols'] = usecols
-        if nrows is not None:
-            read_kwargs['nrows'] = nrows
-        
-        # Handle compression
+
         if self.is_compressed(file_path):
             compression = self.get_compression_type(file_path)
-            if library in ['pandas', 'modin'] and file_format == 'csv':
+            if compression and library in ['pandas', 'fireducks'] and file_format == 'csv':
                 read_kwargs['compression'] = compression
-        
-        # Read based on library and format
+
         if library == 'pandas':
-            return self._read_pandas(lib, file_path, file_format, read_kwargs)
+            return self._read_pandas(lib, file_path, file_format, read_kwargs, nrows)
         elif library == 'polars':
-            return self._read_polars(lib, file_path, file_format, read_kwargs)
-        elif library == 'modin':
-            return self._read_modin(lib, file_path, file_format, read_kwargs)
+            return self._read_polars(lib, file_path, file_format, read_kwargs, nrows)
+        elif library == 'fireducks':
+            return self._read_fireducks(lib, file_path, file_format, read_kwargs, nrows)
         elif library == 'duckdb':
-            return self._read_duckdb(lib, file_path, file_format, read_kwargs)
+            return self._read_duckdb(lib, file_path, file_format, read_kwargs, nrows)
         else:
             raise ValueError(f"Unsupported library: {library}")
     
-    def _read_pandas(self, pd, file_path: Path, file_format: str, kwargs: Dict):
+    def _read_pandas(self, pd, file_path: Path, file_format: str, kwargs: Dict, nrows: Optional[int]):
         """Read file with pandas."""
+        kwargs = kwargs.copy()
+        usecols = kwargs.pop('usecols', None)
+
         if file_format == 'csv':
-            return pd.read_csv(file_path, **kwargs)
+            return pd.read_csv(file_path, usecols=usecols, nrows=nrows, **kwargs)
         elif file_format == 'parquet':
-            # Remove CSV-specific kwargs for parquet
-            parquet_kwargs = {k: v for k, v in kwargs.items() 
-                            if k not in ['compression', 'delimiter', 'sep']}
-            return pd.read_parquet(file_path, **parquet_kwargs)
+            parquet_kwargs = {k: v for k, v in kwargs.items()
+                              if k not in ['compression', 'delimiter', 'sep', 'nrows']}
+            df = pd.read_parquet(file_path, columns=usecols, **parquet_kwargs)
+            return df.head(nrows) if nrows else df
         elif file_format == 'json':
-            json_kwargs = {k: v for k, v in kwargs.items() 
-                          if k not in ['compression', 'delimiter', 'sep', 'usecols']}
-            return pd.read_json(file_path, **json_kwargs)
+            json_kwargs = {k: v for k, v in kwargs.items()
+                           if k not in ['compression', 'delimiter', 'sep', 'usecols', 'nrows']}
+            df = pd.read_json(file_path, **json_kwargs)
+            return df.head(nrows) if nrows else df
         elif file_format == 'ndjson':
-            json_kwargs = {k: v for k, v in kwargs.items() 
-                          if k not in ['compression', 'delimiter', 'sep', 'usecols']}
-            return pd.read_json(file_path, lines=True, **json_kwargs)
-    
-    def _read_polars(self, pl, file_path: Path, file_format: str, kwargs: Dict):
+            json_kwargs = {k: v for k, v in kwargs.items()
+                           if k not in ['compression', 'delimiter', 'sep', 'usecols', 'nrows']}
+            df = pd.read_json(file_path, lines=True, **json_kwargs)
+            return df.head(nrows) if nrows else df
+        else:
+            raise ValueError(f"Unsupported format for pandas: {file_format}")
+
+    def _read_polars(self, pl, file_path: Path, file_format: str, kwargs: Dict, nrows: Optional[int]):
         """Read file with polars."""
-        # Polars has different parameter names
         polars_kwargs = kwargs.copy()
-        
+        columns = polars_kwargs.pop('usecols', None)
+
         if file_format == 'csv':
+            if nrows is not None:
+                polars_kwargs['n_rows'] = nrows
+            if columns is not None:
+                polars_kwargs['columns'] = columns
             return pl.read_csv(file_path, **polars_kwargs)
         elif file_format == 'parquet':
-            parquet_kwargs = {k: v for k, v in polars_kwargs.items() 
-                            if k not in ['compression', 'delimiter', 'sep']}
+            if nrows is not None:
+                polars_kwargs['n_rows'] = nrows
+            if columns is not None:
+                polars_kwargs['columns'] = columns
+            parquet_kwargs = {k: v for k, v in polars_kwargs.items()
+                              if k not in ['compression', 'delimiter', 'sep']}
             return pl.read_parquet(file_path, **parquet_kwargs)
         elif file_format == 'json':
-            return pl.read_json(file_path)
+            json_kwargs = {k: v for k, v in polars_kwargs.items() if k not in ['columns', 'n_rows']}
+            df = pl.read_json(file_path, **json_kwargs)
+            return df.head(nrows) if nrows else df
         elif file_format == 'ndjson':
-            return pl.read_ndjson(file_path)
-    
-    def _read_modin(self, mpd, file_path: Path, file_format: str, kwargs: Dict):
-        """Read file with modin."""
-        if file_format == 'csv':
-            return mpd.read_csv(file_path, **kwargs)
-        elif file_format == 'parquet':
-            parquet_kwargs = {k: v for k, v in kwargs.items() 
-                            if k not in ['compression', 'delimiter', 'sep']}
-            return mpd.read_parquet(file_path, **parquet_kwargs)
-        elif file_format == 'json':
-            json_kwargs = {k: v for k, v in kwargs.items() 
-                          if k not in ['compression', 'delimiter', 'sep', 'usecols']}
-            return mpd.read_json(file_path, **json_kwargs)
-        elif file_format == 'ndjson':
-            json_kwargs = {k: v for k, v in kwargs.items() 
-                          if k not in ['compression', 'delimiter', 'sep', 'usecols']}
-            return mpd.read_json(file_path, lines=True, **json_kwargs)
-    
-    def _read_duckdb(self, duckdb, file_path: Path, file_format: str, kwargs: Dict):
+            json_kwargs = {k: v for k, v in polars_kwargs.items() if k not in ['columns', 'n_rows']}
+            df = pl.read_ndjson(file_path, **json_kwargs)
+            return df.head(nrows) if nrows else df
+        else:
+            raise ValueError(f"Unsupported format for polars: {file_format}")
+
+    def _read_duckdb(self, duckdb, file_path: Path, file_format: str, kwargs: Dict, nrows: Optional[int]):
         """Read file with duckdb and return as pandas DataFrame."""
+        kwargs = kwargs.copy()
+        usecols = kwargs.pop('usecols', None)
+
         conn = duckdb.connect()
-        
         try:
+            path_str = str(file_path)
             if file_format == 'csv':
-                query = f"SELECT * FROM read_csv_auto('{file_path}')"
+                query = "SELECT * FROM read_csv_auto(?)"
             elif file_format == 'parquet':
-                query = f"SELECT * FROM read_parquet('{file_path}')"
+                query = "SELECT * FROM read_parquet(?)"
             elif file_format in ['json', 'ndjson']:
-                query = f"SELECT * FROM read_json_auto('{file_path}')"
+                query = "SELECT * FROM read_json_auto(?)"
             else:
                 raise ValueError(f"DuckDB doesn't support format: {file_format}")
-            
-            # Add LIMIT if nrows specified
-            if 'nrows' in kwargs and kwargs['nrows'] is not None:
-                query += f" LIMIT {kwargs['nrows']}"
-            
-            # Add column selection if usecols specified
-            if 'usecols' in kwargs and kwargs['usecols'] is not None:
-                cols = ', '.join(kwargs['usecols'])
+
+            if usecols:
+                cols = ', '.join(f'"{col.replace("\"", "\"\"")}"' for col in usecols)
                 query = query.replace("SELECT *", f"SELECT {cols}")
-            
-            result = conn.execute(query).fetchdf()
-            return result
+
+            if nrows is not None:
+                query += f" LIMIT {int(nrows)}"
+
+            return conn.execute(query, [path_str]).fetchdf()
         finally:
             conn.close()
+
+    def _read_fireducks(self, fpd, file_path: Path, file_format: str, kwargs: Dict, nrows: Optional[int]):
+        """Read file with fireducks."""
+        kwargs = kwargs.copy()
+        usecols = kwargs.pop('usecols', None)
+
+        if file_format == 'csv':
+            return fpd.read_csv(file_path, usecols=usecols, nrows=nrows, **kwargs)
+        elif file_format == 'parquet':
+            parquet_kwargs = {k: v for k, v in kwargs.items()
+                              if k not in ['compression', 'delimiter', 'sep', 'nrows']}
+            df = fpd.read_parquet(file_path, columns=usecols, **parquet_kwargs)
+            return df.head(nrows) if nrows else df
+        elif file_format == 'json':
+            json_kwargs = {k: v for k, v in kwargs.items()
+                           if k not in ['compression', 'delimiter', 'sep', 'usecols', 'nrows']}
+            df = fpd.read_json(file_path, **json_kwargs)
+            return df.head(nrows) if nrows else df
+        elif file_format == 'ndjson':
+            json_kwargs = {k: v for k, v in kwargs.items()
+                           if k not in ['compression', 'delimiter', 'sep', 'usecols', 'nrows']}
+            df = fpd.read_json(file_path, lines=True, **json_kwargs)
+            return df.head(nrows) if nrows else df
+        else:
+            raise ValueError(f"Unsupported format for fireducks: {file_format}")
 
 
 class DatasetFinder:
@@ -314,91 +344,68 @@ class DatasetFinder:
             "*.ndjson", "*.jsonl", "*.json",
             "*.csv.gz", "*.parquet.gz"
         ]
-    
-    def find_dataset(self, project_root: Optional[Path] = None, 
-                    data_subdir: str = "data/raw") -> Optional[Path]:
-        """
-        Find the best available dataset file.
-        
-        Args:
-            project_root: Root directory of the project
-            data_subdir: Subdirectory containing data files
-            
-        Returns:
-            Path to the best dataset file, or None if not found
-        """
-        search_paths = []
-        
-        # Add project-specific search paths
-        if project_root:
-            search_paths.append(project_root / data_subdir)
-            search_paths.append(project_root / "data")
-            search_paths.append(project_root)
-        
-        # Add configured search directories
-        search_paths.extend(self.search_dirs)
-        
-        # Search for files in order of preference
-        for pattern in self.file_patterns:
-            for search_dir in search_paths:
-                if not search_dir.exists():
-                    continue
-                    
-                matches = list(search_dir.glob(pattern))
-                if matches:
-                    # Return the first match (most preferred)
-                    best_file = matches[0]
-                    print(f"Found dataset: {best_file}")
-                    return best_file
-        
+def read_data(
+    file_path: Path,
+    library: str = "pandas",
+    nrows: Optional[int] = None,
+    **kwargs
+) -> Optional[Union[pd.DataFrame, pl.DataFrame]]:
+    """
+    Read data from various file formats using specified library.
+    """
+    if not file_path.exists():
+        print(f"File not found: {file_path}")
         return None
 
+    merged_kwargs = kwargs.copy()
+    usecols = merged_kwargs.pop('usecols', None)
 
-# Convenience functions for easy use across projects
-_default_reader = UniversalDataReader()
-_default_finder = DatasetFinder()
-
-def read_data(file_path: Union[str, Path], 
-              library: str = 'pandas', 
-              **kwargs) -> Any:
-    """
-    Convenience function to read data files with automatic format detection.
-    
-    Args:
-        file_path: Path to the file
-        library: Data processing library to use
-        **kwargs: Additional arguments for reading
-        
-    Returns:
-        DataFrame from the specified library
-    """
-    return _default_reader.read_file(file_path, library=library, **kwargs)
-
-def find_dataset(project_root: Optional[Path] = None) -> Optional[Path]:
-    """
-    Convenience function to find the best dataset in a project.
-    
-    Args:
-        project_root: Root directory of the project
-        
-    Returns:
-        Path to the best dataset file
-    """
-    return _default_finder.find_dataset(project_root)
-
-def get_dataset_size(file_path: Union[str, Path]) -> int:
-    """
-    Get the number of records in a dataset file.
-    
-    Args:
-        file_path: Path to the dataset file
-        
-    Returns:
-        Number of records in the dataset
-    """
     try:
-        df = read_data(file_path, library='pandas', nrows=None)
-        return len(df)
+        return _default_reader.read_file(
+            file_path=file_path,
+            library=library,
+            usecols=usecols,
+            nrows=nrows,
+            **merged_kwargs
+        )
     except Exception as e:
-        print(f"Warning: Could not determine dataset size: {e}")
+        print(f"Error reading {file_path} with {library}: {e}")
+        return None
+
+def find_dataset() -> Optional[Path]:
+    """
+    Find the default dataset file in the data/raw directory.
+    Returns the Path if found, else None.
+    """
+    import os
+    from pathlib import Path
+    data_dir = Path("data/raw")
+    for ext in [".csv", ".parquet", ".json", ".jsonl", ".ndjson"]:
+        for file in data_dir.glob(f"*{ext}"):
+            return file.resolve()
+    return None
+
+def get_dataset_size(file_path: Path) -> int:
+    """
+    Return the number of rows in the dataset for supported formats.
+    """
+    if not file_path.exists():
         return 0
+    ext = file_path.suffix.lower()
+    if ext == ".csv":
+        with open(file_path, "r") as f:
+            return sum(1 for _ in f) - 1  # subtract header
+    elif ext == ".parquet":
+        try:
+            import pandas as pd
+            df = pd.read_parquet(file_path, columns=None)
+            return len(df)
+        except Exception:
+            return 0
+    elif ext in [".json", ".jsonl", ".ndjson"]:
+        with open(file_path, "r") as f:
+            return sum(1 for _ in f)
+    else:
+        return 0
+
+_default_reader = UniversalDataReader()
