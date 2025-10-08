@@ -653,7 +653,7 @@ def run_benchmark_operation(library_name: str,
     result = operation_func(csv_path)
     duration = time.perf_counter() - start
     log_memory_usage(f"{library_name} {operation_name} (end)")
-    print(f"{library_name} {operation_name} duration: {duration:.2f}s")
+    print(f"{library_name} {operation_name} duration: {duration:.4f}s")
     gc.collect()
     if result is None:
         return None
@@ -992,10 +992,10 @@ def print_summary(results: dict) -> None:
             continue
         fastest_lib = min(timings, key=lambda k: timings[k])
         fastest_time = timings[fastest_lib]
-        print(f"  Fastest: {fastest_lib} ({fastest_time:.2f}s)")
+        print(f"  Fastest: {fastest_lib} ({fastest_time:.4f}s)")
         for lib, t in sorted(timings.items(), key=lambda x: x[1]):
             factor = fastest_time / t if t > 0 else 0  # FIXED: Avoid division by zero
-            print(f"  {lib:<10}: {t:7.2f}s (x{factor:.1f})")
+            print(f"  {lib:<10}: {t:7.4f}s (x{factor:.1f})")
         print()
 
 def main():

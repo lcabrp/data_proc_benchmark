@@ -578,7 +578,7 @@ def run_benchmark_operation(library_name: str,
         result = operation_func(csv_path)
         duration = time.perf_counter() - start
         
-        print(f"{library_name} {operation_name} duration: {duration:.2f}s")
+        print(f"{library_name} {operation_name} duration: {duration:.4f}s")
         
         # If operation failed, return None (not 0.0)
         if result is None:
@@ -772,10 +772,10 @@ if __name__ == "__main__":
             valid_timings = {lib: time for lib, time in timings.items() if time is not None and time > 0.0}
             if valid_timings:
                 fastest = min(valid_timings.items(), key=lambda x: x[1])
-                print(f"  Fastest: {fastest[0]} ({fastest[1]:.2f}s)")
+                print(f"  Fastest: {fastest[0]} ({fastest[1]:.4f}s)")
                 for lib, duration in sorted(valid_timings.items(), key=lambda x: x[1]):
                     speedup = fastest[1] / duration if duration > 0 else 0
-                    print(f"  {lib:10}: {duration:6.2f}s (x{speedup:.1f})")
+                    print(f"  {lib:10}: {duration:6.4f}s (x{speedup:.1f})")
             else:
                 print("  No valid timings to compare (all skipped or failed).")
 

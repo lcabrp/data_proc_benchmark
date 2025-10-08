@@ -535,7 +535,7 @@ class ModularBenchmark:
 
                 # Print immediate feedback
                 if result['status'] == 'success':
-                    time_str = f"{result['execution_time']:.2f}s"
+                    time_str = f"{result['execution_time']:.4f}s"
                     shape_str = f", shape: {result['result_shape']}" if result['result_shape'] else ""
                     mem_str = f", memory: {result['memory_usage']}MB" if result['memory_usage'] else ""
                     print(f"    ✓ Completed in {time_str}{shape_str}{mem_str}")
@@ -781,7 +781,7 @@ def run_operation(library, operation_name, operation_func):
         
         duration = time.time() - start_time
         shape = getattr(result, 'shape', 'N/A')
-        print(f"    ✓ Completed in {duration:.2f}s, shape: {shape}")
+        print(f"    ✓ Completed in {duration:.4f}s, shape: {shape}")
         return duration, result
     except Exception as e:
         print(f"    ✗ error: {e}")
