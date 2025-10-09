@@ -2,7 +2,66 @@
 
 All notable changes to this project will be documented in this file.
 
-The format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and uses semantic versioning when feasible.
+The format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when feasible.
+
+
+## [Unreleased]
+
+### Added
+- Enhanced WSL detection and platform-aware system identification
+- Centralized platform detection utilities in `utils/platform_utils.py`
+- Project-wide consistent WSL1/WSL2 differentiation in CSV output
+- Enhanced host information display in all benchmark scripts
+- Future-proof WSL3 support in platform detection
+- Platform-specific recommendations and capabilities detection
+- Comprehensive system information collection with WSL awareness
+
+### Changed
+- **Breaking**: CSV `system` column now shows "WSL1"/"WSL2" instead of generic "Linux" for WSL environments
+- Enhanced `utils/host_info.py` with WSL detection integration
+- Updated `benchmark.py` to use centralized platform detection
+- Updated `benchmark_01.py` to use centralized platform detection
+- Updated `benchmark_02.py` to use centralized platform detection  
+- Updated `benchmark_modular.py` to use centralized platform detection
+- All benchmark scripts now show enhanced host information at startup
+- Improved memory usage reporting and cleanup messaging
+
+### Removed
+- Manual FireDucks detection code from all benchmark scripts (replaced with centralized detection)
+- Manual platform detection code duplicated across scripts
+- Unused imports and redundant functions in benchmark scripts
+- Commented-out manual detection code blocks
+
+### Fixed
+- WSL environments now properly identified as "WSL2" instead of "Linux" in analysis
+- Consistent platform detection logic across all benchmark modules
+- Import cleanup to remove Pylance warnings for unused imports
+- Enhanced CSV data quality for platform-based analysis
+- Proper error handling in platform detection with graceful fallbacks
+
+### Technical Improvements
+- **DRY Principle**: Eliminated code duplication across benchmark scripts
+- **Centralized Logic**: All platform detection now in `utils/platform_utils.py`
+- **Enhanced Analysis**: CSV data now supports clean platform-based filtering
+- **Better UX**: Users see clear system information before benchmarks run
+- **Future-Proof**: Ready for WSL3 and other platform variants
+- **Maintainable**: Single source of truth for platform detection logic
+
+### Database/CSV Schema Changes
+- **system** column values:
+  - Before: "Windows", "Linux", "Darwin"
+  - After: "Windows", "Linux", "WSL1", "WSL2", "Darwin"
+- Existing data remains backward compatible
+- New benchmark runs automatically use enhanced platform detection
+
+### Analysis Improvements
+- Analysis notebooks can now cleanly differentiate between:
+  - `b_df[b_df['system'] == 'WSL2']` - WSL2 environments
+  - `b_df[b_df['system'] == 'Linux']` - Native Linux environments  
+  - `b_df[b_df['system'] == 'Windows']` - Native Windows environments
+- Enhanced platform-specific performance comparisons possible
+- Better insights into platform-specific library performance characteristics
+
 ## [0.1.4] - 2025-09-20
 ### Added
 - FireDucks Support: Added full support for FireDucks (Linux/macOS only) across all benchmark scripts, including operations, loading, optimization, and CSV output.

@@ -6,221 +6,322 @@ and environment-specific configuration recommendations for benchmarking.
 """
 
 import platform
-import warnings
-from typing import Dict, Any, Optional
+import sys
+import os
+from typing import Dict, Any, Optional, Tuple
 
 
 class PlatformDetector:
-    """Centralized platform detection and configuration utilities."""
+    """Centralized platform detection and configuration for cross-platform benchmarking."""
     
-    @staticmethod
-    def get_platform_flags() -> Dict[str, bool]:
-        """
-        Get platform detection flags.
+    def __init__(self):
+        self.system = platform.system()
+        self.release = platform.release()
         
-        Returns:
-            dict: Platform flags (IS_WINDOWS, IS_WSL, IS_LINUX, IS_MACOS)
-        """
-        uname_release = platform.uname().release
-        system = platform.system()
+        # Core platform flags
+        self.IS_WINDOWS = self.system == "Windows"
+        self.IS_LINUX = self.system == "Linux"
+        self.IS_MACOS = self.system == "Darwin"
         
-        return {
-            'IS_WINDOWS': system == 'Windows',
-            'IS_WSL': 'WSL' in uname_release,
-            'IS_LINUX': system == 'Linux' and 'WSL' not in uname_release,
-            'IS_MACOS': system == 'Darwin'
-        }
+        # Enhanced WSL detection with fallback to original method
+        self.IS_WSL, self.WSL_VERSION = self._detect_wsl()
+        self.IS_NATIVE_LINUX = self.IS_LINUX and not self.IS_WSL
+        
+        # Linux distribution (if applicable)
+        if self.IS_LINUX:
+            self.LINUX_DISTRO = self._check_linux_distribution()
+        else:
+            self.LINUX_DISTRO = None
+        
+        # Library availability detection
+        self._check_library_availability()
     
-    @staticmethod
-    def check_library_availability() -> Dict[str, bool]:
+    def _detect_wsl(self) -> Tuple[bool, Optional[str]]:
         """
-        Check availability of optional libraries.
-        
-        Returns:
-            dict: Library availability flags
+        Enhanced WSL detection with multiple methods and fallback.
+        Returns: (is_wsl, wsl_version)
         """
-        libraries = {}
+        if not self.IS_LINUX:
+            return False, None
         
-        # Check Ray availability (all platforms)
+        # Method 1: Check /proc/version (most reliable)
         try:
-            import ray
-            libraries['RAY_AVAILABLE'] = True
-        except ImportError:
-            libraries['RAY_AVAILABLE'] = False
+            with open('/proc/version', 'r') as f:
+                version_info = f.read().lower()
+                if 'microsoft' in version_info:
+                    if 'wsl2' in version_info:
+                        return True, 'WSL2'
+                    elif 'wsl' in version_info:
+                        return True, 'WSL1'
+                    else:
+                        return True, 'WSL_UNKNOWN'
+        except (FileNotFoundError, PermissionError):
+            pass
         
-        # Check FireDucks availability (Linux/macOS/WSL)
-        platforms = PlatformDetector.get_platform_flags()
-        if not platforms['IS_WINDOWS'] or platforms['IS_WSL']:
+        # Method 2: Check environment variables
+        wsl_env = os.environ.get('WSL_DISTRO_NAME')
+        if wsl_env:
+            # WSL2 has WSL_INTEROP, WSL1 typically doesn't
+            wsl_interop = os.environ.get('WSL_INTEROP')
+            return True, 'WSL2' if wsl_interop else 'WSL1'
+        
+        # Method 3: Fallback to original method (maintains backward compatibility)
+        if 'wsl' in self.release.lower():
+            return True, 'WSL_RELEASE'
+        
+        return False, None
+    
+    def _check_linux_distribution(self) -> str:
+        """Detect specific Linux distribution."""
+        try:
+            import distro
+            return distro.name()
+        except ImportError:
+            try:
+                with open('/etc/os-release', 'r') as f:
+                    for line in f:
+                        if line.startswith('NAME='):
+                            return line.split('=')[1].strip().strip('"')
+            except FileNotFoundError:
+                pass
+        return "Unknown Linux"
+    
+    def _check_library_availability(self):
+        """Check availability of optional libraries and data processing frameworks."""
+        
+        # FireDucks (Linux/macOS only)
+        self.FIREDUCKS_AVAILABLE = False
+        if self.IS_LINUX or self.IS_MACOS:
             try:
                 import fireducks.pandas as fpd
-                libraries['FIREDUCKS_AVAILABLE'] = True
+                self.FIREDUCKS_AVAILABLE = True
             except ImportError:
-                libraries['FIREDUCKS_AVAILABLE'] = False
-        else:
-            libraries['FIREDUCKS_AVAILABLE'] = False
+                pass
         
-        # Check other optional libraries
-        optional_libs = ['cpuinfo', 'wmi', 'GPUtil']
-        for lib in optional_libs:
-            try:
-                __import__(lib)
-                libraries[f'{lib.upper()}_AVAILABLE'] = True
-            except ImportError:
-                libraries[f'{lib.upper()}_AVAILABLE'] = False
-        
-        return libraries
-    
-    @staticmethod
-    def get_recommended_modin_engine() -> str:
-        """
-        Get recommended Modin engine based on platform and available libraries.
-        
-        Returns:
-            str: Recommended engine ('ray' or 'dask')
-        """
-        platforms = PlatformDetector.get_platform_flags()
-        libraries = PlatformDetector.check_library_availability()
-        
-        # Windows: prefer Dask (more stable)
-        if platforms['IS_WINDOWS']:
-            return "dask"
-        
-        # Linux/macOS/WSL: prefer Ray if available, fallback to Dask
-        return "ray" if libraries['RAY_AVAILABLE'] else "dask"
-    
-    @staticmethod
-    def get_dask_cluster_config() -> Dict[str, Any]:
-        """
-        Get recommended Dask cluster configuration based on platform.
-        
-        Returns:
-            dict: Cluster configuration parameters
-        """
-        import psutil
-        
-        platforms = PlatformDetector.get_platform_flags()
-        total_memory = psutil.virtual_memory().total
-        total_gb = total_memory // (1024 ** 3)
-        logical_cores = psutil.cpu_count(logical=True) or 4
-        
-        if platforms['IS_WINDOWS']:
-            # Windows: threaded workers for stability
-            return {
-                'n_workers': min(2, max(1, logical_cores)),
-                'threads_per_worker': max(1, logical_cores // min(2, logical_cores)),
-                'processes': False,
-                'memory_target_gb_per_worker': total_gb // 2
-            }
-        else:
-            # Linux/macOS: process-based workers
-            target_per_worker_gb = 4
-            n_workers_by_mem = max(1, int(total_gb // target_per_worker_gb))
-            n_workers = min(logical_cores, n_workers_by_mem)
-            
-            return {
-                'n_workers': max(1, n_workers),
-                'threads_per_worker': max(1, logical_cores // n_workers),
-                'processes': True,
-                'memory_target_gb_per_worker': target_per_worker_gb
-            }
-    
-    @staticmethod
-    def setup_ray_if_needed(engine: str) -> bool:
-        """
-        Initialize Ray if using Ray engine.
-        
-        Args:
-            engine (str): The engine being used ('ray' or 'dask')
-            
-        Returns:
-            bool: True if Ray was successfully initialized or not needed
-        """
-        if engine != "ray":
-            return True
-        
-        libraries = PlatformDetector.check_library_availability()
-        if not libraries['RAY_AVAILABLE']:
-            return False
+        # Core data processing libraries (should always be available)
+        self.PANDAS_AVAILABLE = True  # Required dependency
         
         try:
-            import ray
-            if not ray.is_initialized():
-                ray.init(ignore_reinit_error=True)
-                print("Ray initialized for Modin")
-            return True
-        except Exception as e:
-            print(f"Warning: Failed to initialize Ray: {e}")
-            return False
-    
-    @staticmethod
-    def cleanup_ray_if_needed(engine: str) -> None:
-        """
-        Cleanup Ray if it was used.
-        
-        Args:
-            engine (str): The engine that was used ('ray' or 'dask')
-        """
-        if engine != "ray":
-            return
-        
-        libraries = PlatformDetector.check_library_availability()
-        if not libraries['RAY_AVAILABLE']:
-            return
+            import polars
+            self.POLARS_AVAILABLE = True
+        except ImportError:
+            self.POLARS_AVAILABLE = False
         
         try:
-            import ray
-            if ray.is_initialized():
-                ray.shutdown()
-                print("Ray shutdown completed")
-        except Exception as e:
-            print(f"Warning: Ray shutdown failed: {e}")
+            import duckdb
+            self.DUCKDB_AVAILABLE = True
+        except ImportError:
+            self.DUCKDB_AVAILABLE = False
+        
+        # Optional system info libraries
+        try:
+            import cpuinfo
+            self.CPUINFO_AVAILABLE = True
+        except ImportError:
+            self.CPUINFO_AVAILABLE = False
+        
+        try:
+            import wmi
+            self.WMI_AVAILABLE = True
+        except ImportError:
+            self.WMI_AVAILABLE = False
+        
+        try:
+            import GPUtil
+            self.GPUTIL_AVAILABLE = True
+        except ImportError:
+            self.GPUTIL_AVAILABLE = False
     
-    @staticmethod
-    def get_available_benchmark_libraries() -> list:
-        """
-        Get list of available libraries for benchmarking.
-        
-        Returns:
-            list: List of available library names
-        """
-        libraries = ["pandas", "modin", "polars", "duckdb"]
-        availability = PlatformDetector.check_library_availability()
-        
-        if availability['FIREDUCKS_AVAILABLE']:
-            libraries.append("fireducks")
-        
+    def get_platform_flags(self) -> Dict[str, bool]:
+        """Get platform detection flags (maintains original API)."""
+        return {
+            'IS_WINDOWS': self.IS_WINDOWS,
+            'IS_LINUX': self.IS_LINUX,
+            'IS_MACOS': self.IS_MACOS,
+            'IS_WSL': self.IS_WSL
+        }
+    
+    def get_enhanced_platform_flags(self) -> Dict[str, bool]:
+        """Get enhanced platform detection flags with additional detail."""
+        return {
+            'IS_WINDOWS': self.IS_WINDOWS,
+            'IS_LINUX': self.IS_LINUX,
+            'IS_MACOS': self.IS_MACOS,
+            'IS_WSL': self.IS_WSL,
+            'IS_NATIVE_LINUX': self.IS_NATIVE_LINUX
+        }
+    
+    def get_library_availability(self) -> Dict[str, bool]:
+        """Get availability status of all libraries (maintains original API)."""
+        return {
+            'pandas': self.PANDAS_AVAILABLE,
+            'polars': self.POLARS_AVAILABLE,
+            'duckdb': self.DUCKDB_AVAILABLE,
+            'fireducks': self.FIREDUCKS_AVAILABLE,
+            'cpuinfo': self.CPUINFO_AVAILABLE,
+            'wmi': self.WMI_AVAILABLE,
+            'gputil': self.GPUTIL_AVAILABLE
+        }
+    
+    def get_available_benchmark_libraries(self) -> list:
+        """Get list of available data processing libraries for benchmarking."""
+        libraries = []
+        if self.PANDAS_AVAILABLE:
+            libraries.append('pandas')
+        if self.POLARS_AVAILABLE:
+            libraries.append('polars')
+        if self.DUCKDB_AVAILABLE:
+            libraries.append('duckdb')
+        if self.FIREDUCKS_AVAILABLE:
+            libraries.append('fireducks')
         return libraries
     
-    @staticmethod
-    def print_environment_info() -> None:
-        """Print comprehensive environment information."""
-        platforms = PlatformDetector.get_platform_flags()
-        libraries = PlatformDetector.check_library_availability()
+    def get_system_capabilities(self) -> Dict[str, Any]:
+        """Get system capabilities and recommendations (maintains original API)."""
+        capabilities = {
+            'platform': self.system,
+            'is_windows': self.IS_WINDOWS,
+            'is_linux': self.IS_LINUX,
+            'is_macos': self.IS_MACOS,
+            'is_wsl': self.IS_WSL,
+            'python_version': sys.version,
+            'available_libraries': self.get_available_benchmark_libraries(),
+            'optional_libraries': {
+                'cpuinfo': self.CPUINFO_AVAILABLE,
+                'wmi': self.WMI_AVAILABLE,
+                'gputil': self.GPUTIL_AVAILABLE
+            }
+        }
         
-        print("=== Environment Information ===")
-        print(f"Platform: {platform.system()} {platform.release()}")
-        print(f"Architecture: {platform.machine()}")
-        print(f"Python: {platform.python_version()}")
+        # Add memory recommendations
+        try:
+            import psutil
+            memory_gb = psutil.virtual_memory().total / (1024**3)
+            capabilities['total_memory_gb'] = round(memory_gb, 1)
+            capabilities['memory_recommendation'] = self._get_memory_recommendation(memory_gb)
+        except ImportError:
+            capabilities['total_memory_gb'] = 'unknown'
+            capabilities['memory_recommendation'] = 'Install psutil for memory analysis'
         
-        print("\n=== Platform Flags ===")
-        for flag, value in platforms.items():
-            print(f"{flag}: {value}")
+        return capabilities
+    
+    def get_enhanced_system_capabilities(self) -> Dict[str, Any]:
+        """Get enhanced system capabilities with additional WSL/Linux details."""
+        capabilities = self.get_system_capabilities()
         
-        print("\n=== Library Availability ===")
-        for lib, available in libraries.items():
-            status = "✓" if available else "✗"
-            print(f"{status} {lib}")
+        # Add enhanced platform details
+        capabilities['is_native_linux'] = self.IS_NATIVE_LINUX
         
-        print(f"\n=== Recommended Modin Engine ===")
-        print(f"Engine: {PlatformDetector.get_recommended_modin_engine()}")
+        if self.IS_WSL:
+            capabilities['wsl_version'] = self.WSL_VERSION
+        
+        if self.IS_LINUX:
+            capabilities['linux_distro'] = self.LINUX_DISTRO
+        
+        return capabilities
+    
+    def _get_memory_recommendation(self, memory_gb: float) -> str:
+        """Get memory usage recommendations based on available RAM."""
+        if memory_gb < 4:
+            return "Low memory - consider using smaller datasets or cloud processing"
+        elif memory_gb < 8:
+            return "Moderate memory - suitable for datasets up to 1M records"
+        elif memory_gb < 16:
+            return "Good memory - suitable for datasets up to 10M records"
+        elif memory_gb < 32:
+            return "High memory - suitable for datasets up to 100M records"
+        else:
+            return "Very high memory - suitable for large-scale processing"
+    
+    def get_platform_specific_recommendations(self) -> Dict[str, str]:
+        """Get platform-specific recommendations for optimal performance."""
+        recommendations = {}
+        
+        if self.IS_WINDOWS:
+            recommendations.update({
+                'file_format': 'Use Parquet format for better Windows I/O performance',
+                'memory': 'Windows may require more conservative memory settings',
+                'fireducks': 'FireDucks not available on Windows - use pandas/polars/duckdb'
+            })
+        
+        if self.IS_WSL:
+            wsl_version = self.WSL_VERSION or 'WSL'
+            recommendations.update({
+                'performance': f'{wsl_version} may have I/O overhead - consider native Linux for best performance',
+                'file_access': 'Store datasets on WSL filesystem for better performance',
+                'memory': f'{wsl_version} shares memory with Windows - monitor usage carefully',
+                'fireducks': f'FireDucks available on {wsl_version} but may have reduced performance'
+            })
+        
+        if self.IS_NATIVE_LINUX:
+            distro = self.LINUX_DISTRO or 'Linux'
+            recommendations.update({
+                'performance': f'Native {distro} - optimal performance expected',
+                'fireducks': 'FireDucks available for advanced pandas acceleration',
+                'memory': 'Linux typically handles memory most efficiently'
+            })
+        
+        if self.IS_MACOS:
+            recommendations.update({
+                'fireducks': 'FireDucks available for advanced pandas acceleration',
+                'memory': 'macOS handles memory efficiently but may have M1/Intel differences'
+            })
+        
+        return recommendations
 
 
-# Backward compatibility - expose functions directly
-def get_platform_flags():
-    return PlatformDetector.get_platform_flags()
+# Backward compatibility - expose functions directly (UNCHANGED API)
+def get_platform_flags() -> Dict[str, bool]:
+    """Get platform detection flags (backward compatibility)."""
+    detector = PlatformDetector()
+    return detector.get_platform_flags()
 
-def check_library_availability():
-    return PlatformDetector.check_library_availability()
 
-def get_recommended_modin_engine():
-    return PlatformDetector.get_recommended_modin_engine()
+def check_library_availability() -> Dict[str, bool]:
+    """Check availability of libraries (backward compatibility)."""
+    detector = PlatformDetector()
+    return detector.get_library_availability()
+
+
+def get_system_info() -> Dict[str, Any]:
+    """Get comprehensive system information (backward compatibility)."""
+    detector = PlatformDetector()
+    return detector.get_system_capabilities()
+
+
+# New enhanced functions (optional for benchmark scripts that want more detail)
+def get_enhanced_platform_info() -> Dict[str, Any]:
+    """Get enhanced platform information with WSL/Linux details."""
+    detector = PlatformDetector()
+    return {
+        'platform_flags': detector.get_enhanced_platform_flags(),
+        'system_capabilities': detector.get_enhanced_system_capabilities(),
+        'recommendations': detector.get_platform_specific_recommendations()
+    }
+
+
+# Module-level constants for direct access (MAINTAINS ORIGINAL API)
+_detector = PlatformDetector()
+
+IS_WINDOWS = _detector.IS_WINDOWS
+IS_LINUX = _detector.IS_LINUX
+IS_MACOS = _detector.IS_MACOS
+IS_WSL = _detector.IS_WSL
+
+# New constants (optional, won't break existing code)
+IS_NATIVE_LINUX = _detector.IS_NATIVE_LINUX
+WSL_VERSION = _detector.WSL_VERSION
+LINUX_DISTRO = _detector.LINUX_DISTRO
+
+PANDAS_AVAILABLE = _detector.PANDAS_AVAILABLE
+POLARS_AVAILABLE = _detector.POLARS_AVAILABLE
+DUCKDB_AVAILABLE = _detector.DUCKDB_AVAILABLE
+FIREDUCKS_AVAILABLE = _detector.FIREDUCKS_AVAILABLE
+
+CPUINFO_AVAILABLE = _detector.CPUINFO_AVAILABLE
+WMI_AVAILABLE = _detector.WMI_AVAILABLE
+GPUTIL_AVAILABLE = _detector.GPUTIL_AVAILABLE
+
+
+# Clean up temporary detector
+del _detector

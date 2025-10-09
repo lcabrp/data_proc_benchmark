@@ -32,26 +32,9 @@ warnings.filterwarnings("ignore", category=SyntaxWarning, message=r"invalid esca
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, project_root)
 
-from utils import (
-    get_host_info, get_memory_usage_mb, log_memory_usage,
-    PlatformDetector, optimize_df_types
-)
+from utils import ( get_host_info, log_memory_usage, optimize_df_types )
 from utils.data_io import UniversalDataReader, get_dataset_size as universal_dataset_size
-
-# Platform flags
-platform_flags = PlatformDetector.get_platform_flags()
-IS_WINDOWS = platform_flags['IS_WINDOWS']
-IS_WSL = platform_flags['IS_WSL']
-IS_LINUX = platform_flags['IS_LINUX']
-IS_MACOS = platform_flags['IS_MACOS']
-
-# Optional libraries
-try:
-    import fireducks.pandas as fpd
-    FIREDUCKS_AVAILABLE = True
-except ImportError:
-    FIREDUCKS_AVAILABLE = False
-    print("Warning: FireDucks not available, will be skipped.")
+from utils.platform_utils import FIREDUCKS_AVAILABLE  
 
 # Type aliases
 PandasDataFrame = pd.DataFrame

@@ -3,8 +3,6 @@ import time
 import pandas as pd
 import polars as pl
 import duckdb
-import platform
-import logging
 import warnings
 import sys
 import os
@@ -15,7 +13,7 @@ import argparse
 import numpy as np
 import gc
 from typing import Optional, Callable, Any, Union, List
-from contextlib import redirect_stderr, redirect_stdout
+from contextlib import redirect_stderr
 from typing import cast
 from pathlib import Path
 
@@ -26,11 +24,11 @@ warnings.filterwarnings("ignore", category=SyntaxWarning, message=r"invalid esca
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, project_root)
 
-# Import our utility modules (fixed import path)
 from utils.host_info import get_host_info
 from utils.config import setup_project
-from utils.data_io import UniversalDataReader, get_dataset_size as universal_dataset_size
-from utils import optimize_df_types
+from utils.data_io import get_dataset_size as universal_dataset_size
+from utils.useful_functions import optimize_df_types  
+from utils.platform_utils import FIREDUCKS_AVAILABLE  
 
 # File format detection and universal reading functions
 def detect_file_format(file_path: Path) -> str:
@@ -138,15 +136,6 @@ def find_dataset_file() -> Path:
     fallback = data_dir / "raw" / "synthetic_logs_7M.parquet"
     print(f"No dataset found, expecting: {fallback}")
     return fallback
-
-# FireDucks check (Linux/macOS only)
-FIREDUCKS_AVAILABLE = False
-if platform.system() in ['Linux', 'Darwin']:
-    try:
-        import fireducks.pandas as fpd
-        FIREDUCKS_AVAILABLE = True
-    except ImportError:
-        pass
 
 def get_dataset_size(file_path: Path) -> int:
     """
@@ -703,7 +692,21 @@ if __name__ == "__main__":
         print("="*60)
         print("COMPREHENSIVE DATA PROCESSING BENCHMARK")
         print("="*60)
+        # Get host info with enhanced platform detection
+        host_info = get_host_info()
 
+        # Display key system information with WSL detection
+        hostname = host_info.get('hostname', 'Unknown')
+        system_info = host_info.get('system', 'Unknown')  # Now shows WSL2/WSL1
+        cpu_brand = host_info.get('cpu_brand', 'Unknown')
+        logical_cores = host_info.get('cpu_count_logical', 0)
+        memory_total = host_info.get('memory_total_gb', 0.0)
+
+        print(f"Running on: {hostname} ({system_info})")
+        print(f"CPU: {cpu_brand} ({logical_cores} logical cores)")
+        print(f"Memory: {memory_total:.2f} GB total")
+        print()
+        
         # Optional CLI/env dataset override
         parser = argparse.ArgumentParser(add_help=False)
         parser.add_argument("-d", "--dataset", type=str, help="Path to the dataset file to benchmark")

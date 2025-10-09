@@ -4,7 +4,6 @@ import time
 import pandas as pd
 import polars as pl
 import duckdb
-import platform
 import sys
 import csv
 import argparse
@@ -22,6 +21,7 @@ from utils.config import setup_project
 from utils.data_io import read_data, find_dataset, get_dataset_size
 from utils.host_info import get_host_info
 from utils.useful_functions import optimize_df_types
+from utils.platform_utils import FIREDUCKS_AVAILABLE
 
 # Use the reusable configuration
 config = setup_project()
@@ -31,15 +31,6 @@ RESULTS_CSV_PATH = config.benchmark_results_file
 
 # Ensure results directory exists (default path; final path may be overridden at runtime)
 RESULTS_CSV_PATH.parent.mkdir(parents=True, exist_ok=True)
-
-# FireDucks check (Linux/macOS only)
-FIREDUCKS_AVAILABLE = False
-if platform.system() in ["Linux", "Darwin"]:
-    try:
-        import fireducks.pandas as fpd  # type: ignore
-        FIREDUCKS_AVAILABLE = True
-    except ImportError:
-        pass
 
 # Benchmark dataset optimization types (centralized configuration)
 BENCHMARK_OPTIMIZATION_TYPES = {
@@ -594,8 +585,8 @@ def _write_one_results_csv(path: Path, results: dict, host_info: dict, script_na
             writer.writerow(row)
 
 def write_results_to_csv(results: dict, dataset_size: int) -> None:
-    """Write benchmark results to CSV file."""
-    host_info = get_host_info()
+    """Write benchmark results to CSV file with enhanced platform detection."""
+    host_info = get_host_info()  # Now includes WSL detection automatically
     script_name = Path(__file__).name
     _write_one_results_csv(RESULTS_CSV_PATH, results, host_info, script_name, dataset_size)
     print(f"\nResults written to: {RESULTS_CSV_PATH}")
@@ -604,6 +595,36 @@ def write_results_to_csv(results: dict, dataset_size: int) -> None:
 def main():
     """Main function to run all benchmarks with realistic memory management."""
     global DATASET_PATH, RESULTS_CSV_PATH
+    # Simple host information display (matching benchmark_01.py style)
+    print("=" * 60)
+    print("COMPREHENSIVE DATA PROCESSING BENCHMARK")
+    print("=" * 60)
+    
+    # Get host info with enhanced platform detection
+    raw_host_info = get_host_info()
+    
+    # Simple fallbacks for missing data
+    try:
+        import psutil
+        if raw_host_info.get("cpu_count_logical", 0) <= 0:
+            raw_host_info["cpu_count_logical"] = psutil.cpu_count(logical=True) or 0
+        if raw_host_info.get("memory_total_gb", 0) <= 0:
+            raw_host_info["memory_total_gb"] = psutil.virtual_memory().total / (1024**3)
+    except ImportError:
+        pass
+    
+    # Display key system information
+    hostname = raw_host_info.get('hostname', 'Unknown')
+    system_info = raw_host_info.get('system', 'Unknown')
+    platform_info = raw_host_info.get('platform', 'Unknown')
+    cpu_brand = raw_host_info.get('cpu_brand', 'Unknown')
+    logical_cores = raw_host_info.get('cpu_count_logical', 0)
+    memory_total = raw_host_info.get('memory_total_gb', 0.0)
+    
+    print(f"Running on: {hostname} ({system_info}) ({platform_info})")
+    print(f"CPU: {cpu_brand} ({logical_cores} logical cores)")
+    print(f"Memory: {memory_total:.2f} GB total")
+    print()
 
     # Parse command line arguments
     parser = argparse.ArgumentParser(description="Run comprehensive data processing benchmarks")

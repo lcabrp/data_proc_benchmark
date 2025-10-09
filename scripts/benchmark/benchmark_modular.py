@@ -1,3 +1,5 @@
+# Replace imports section (lines 1-57) with:
+
 """
 Modern benchmark script using reusable modular components.
 
@@ -11,9 +13,7 @@ import gc
 import os
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Union, cast
-from contextlib import redirect_stderr, redirect_stdout
 import argparse
-import platform
 
 import warnings
 import psutil
@@ -27,34 +27,30 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from utils.config import setup_project
 from utils.data_io import UniversalDataReader, DatasetFinder
 from utils.host_info import get_host_info
+from utils.useful_functions import optimize_df_types
 
-# Import data processing libraries
+# Import platform detection with all libraries and flags
+from utils.platform_utils import (
+    PlatformDetector,
+    FIREDUCKS_AVAILABLE,
+    POLARS_AVAILABLE, 
+    DUCKDB_AVAILABLE
+)
+
 import pandas as pd
-try:
+
+# Import optional libraries based on platform detection
+
+if POLARS_AVAILABLE:
     import polars as pl
-    POLARS_AVAILABLE = True
-except ImportError:
-    POLARS_AVAILABLE = False
+else:
     pl = None
 
-try:
+if DUCKDB_AVAILABLE:
     import duckdb
-    DUCKDB_AVAILABLE = True
-except ImportError:
-    DUCKDB_AVAILABLE = False
 
-import numpy as np
-
-# FireDucks check (Linux/macOS only)
-FIREDUCKS_AVAILABLE = False
-if platform.system() in ['Linux', 'Darwin']:
-    try:
-        import fireducks.pandas as fpd
-        FIREDUCKS_AVAILABLE = True
-    except ImportError:
-        pass
-
-from utils import optimize_df_types
+if FIREDUCKS_AVAILABLE:
+    import fireducks.pandas as fpd
 
 def get_result_shape(result):
     """Return shape tuple or descriptive string for any result object."""
@@ -149,7 +145,7 @@ class ModularBenchmark:
     def _detect_available_libraries(self) -> Dict[str, bool]:
         """Detect which libraries are available."""
         return {
-            'pandas': True,  # Always available as it's required
+            'pandas': True,
             'polars': POLARS_AVAILABLE,
             'duckdb': DUCKDB_AVAILABLE,
             'fireducks': FIREDUCKS_AVAILABLE
@@ -764,52 +760,6 @@ class ModularBenchmark:
             print(f"Error saving results: {e}")
             raise
 
-
-def run_operation(library, operation_name, operation_func):
-    """Run a single operation for a library with timing and error handling."""
-    # Removed Modin-specific handling
-    try:
-        if library == "fireducks" and not FIREDUCKS_AVAILABLE:
-            print(f"  Running {operation_name} with {library}...")
-            print(f"    ✗ skipped: FireDucks not available")
-            return None, None
-        
-        print(f"  Running {operation_name} with {library}...")
-        start_time = time.time()
-        
-        result = operation_func()
-        
-        duration = time.time() - start_time
-        shape = getattr(result, 'shape', 'N/A')
-        print(f"    ✓ Completed in {duration:.4f}s, shape: {shape}")
-        return duration, result
-    except Exception as e:
-        print(f"    ✗ error: {e}")
-        return None, None
-
-
-def run_benchmarks():
-    """Run all benchmarks for available libraries and operations."""
-    # Removed Modin from libraries
-    libraries = ['pandas', 'polars', 'duckdb']
-    operations = ['filter_group', 'stats', 'complex_join', 'timeseries']
-    
-    results = {}
-    for operation in operations:
-        print(f"  Running {operation} with all libraries...")
-        results[operation] = {}
-        for library in libraries:
-            func_name = f"{library}_{operation}"
-            if func_name in globals():
-                duration, _ = run_operation(library, operation, globals()[func_name])
-                results[operation][library] = duration
-            else:
-                print(f"    Warning: {func_name} not found, skipping.")
-                results[operation][library] = None
-    
-    return results
-
-
 def main():
     """Main function with unified CLI parameters (-d/--dataset, -o/--output)."""
     parser = argparse.ArgumentParser(description="Modular Data Processing Benchmark")
@@ -820,14 +770,36 @@ def main():
     print("="*70)
     print("MODULAR DATA PROCESSING BENCHMARK")
     print("="*70)
-
+    
+    # Enhanced host information display with WSL detection
+    print("Collecting host information...")
+    host_info = get_host_info()
+    detector = PlatformDetector()
+    
+    # Display key system information (matching other benchmark scripts)
+    hostname = host_info.get('hostname', 'Unknown')
+    system_info = host_info.get('system', 'Unknown')  # Now shows WSL2 instead of Linux
+    cpu_brand = host_info.get('cpu_brand', 'Unknown')
+    logical_cores = host_info.get('cpu_count_logical', 'N/A')
+    memory_total = host_info.get('memory_total_gb', 'N/A')
+    
+    print(f"Running on: {hostname} ({system_info})")
+    print(f"CPU: {cpu_brand} ({logical_cores} logical cores)")
+    print(f"Memory: {memory_total} GB total")
+    
+    #print(f"🔧 Available libraries: {[lib for lib, avail in benchmark.available_libraries.items() if avail]}")
+    #print()
+    
+    # Enhanced library availability display
+    available_libs = detector.get_available_benchmark_libraries()
+    print(f"Available libraries: {', '.join(available_libs)}")
+    print()
+    
     try:
         benchmark = ModularBenchmark(dataset_path=args.dataset)
         
         print(f"📁 Dataset: {benchmark.dataset_path}")
         print(f"📊 Records: {benchmark.dataset_size:,}")
-        print(f"🔧 Available libraries: {[lib for lib, avail in benchmark.available_libraries.items() if avail]}")
-        print()
 
         # Memory check before starting
         import psutil
