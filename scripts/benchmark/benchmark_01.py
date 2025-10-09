@@ -36,6 +36,11 @@ from utils import ( get_host_info, log_memory_usage, optimize_df_types )
 from utils.data_io import UniversalDataReader, get_dataset_size as universal_dataset_size
 from utils.platform_utils import FIREDUCKS_AVAILABLE  
 
+if FIREDUCKS_AVAILABLE:
+    import fireducks.pandas as fpd
+else:
+    fpd = None
+
 # Type aliases
 PandasDataFrame = pd.DataFrame
 PolarsDataFrame = pl.DataFrame
@@ -636,7 +641,7 @@ def run_benchmark_operation(library_name: str,
     result = operation_func(csv_path)
     duration = time.perf_counter() - start
     log_memory_usage(f"{library_name} {operation_name} (end)")
-    print(f"{library_name} {operation_name} duration: {duration:.4f}s")
+    print(f"{library_name} {operation_name} duration: {duration:.6f}s")
     gc.collect()
     if result is None:
         return None
@@ -961,7 +966,9 @@ def print_summary(results: dict) -> None:
     print("BENCHMARK SUMMARY")
     print("="*50 + "\n")
     operations = ["filter_group", "statistics", "complex_join", "timeseries"]
-    libraries = ["pandas", "polars", "duckdb"]
+    libraries = ["pandas", "polars", "duckdb" ]
+    if FIREDUCKS_AVAILABLE:
+        libraries.append("fireducks")
     
     for op in operations:
         print(f"{op.upper().replace('_',' ')} Operation:")
@@ -975,10 +982,15 @@ def print_summary(results: dict) -> None:
             continue
         fastest_lib = min(timings, key=lambda k: timings[k])
         fastest_time = timings[fastest_lib]
-        print(f"  Fastest: {fastest_lib} ({fastest_time:.4f}s)")
+        #print(f"  Fastest: {fastest_lib} ({fastest_time:.6f}s)")
         for lib, t in sorted(timings.items(), key=lambda x: x[1]):
-            factor = fastest_time / t if t > 0 else 0  # FIXED: Avoid division by zero
-            print(f"  {lib:<10}: {t:7.4f}s (x{factor:.1f})")
+            #factor = fastest_time / t if t > 0 else 0  # FIXED: Avoid division by zero
+            #factor = t / fastest_time 
+            dif = t - fastest_time
+            if lib == fastest_lib:
+                print(f"  {lib:<10}: {t:7.6f}s (Fastest)")    
+            else:
+                print(f"  {lib:<10}: {t:7.6f}s ({dif:,.4f}s more than {fastest_lib})")
         print()
 
 def main():

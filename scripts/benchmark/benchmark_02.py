@@ -30,6 +30,11 @@ from utils.data_io import get_dataset_size as universal_dataset_size
 from utils.useful_functions import optimize_df_types  
 from utils.platform_utils import FIREDUCKS_AVAILABLE  
 
+if FIREDUCKS_AVAILABLE:
+    import fireducks.pandas as fpd
+else:
+    fpd = None
+
 # File format detection and universal reading functions
 def detect_file_format(file_path: Path) -> str:
     """Detect the file format based on extension and content."""
