@@ -325,3 +325,10 @@ GPUTIL_AVAILABLE = _detector.GPUTIL_AVAILABLE
 
 # Clean up temporary detector
 del _detector
+
+if __name__ == "__main__":
+    # Example usage
+    print("Platform Flags:", get_platform_flags())
+    print("Library Availability:", check_library_availability())
+    print("System Info:", get_system_info())
+    print("Enhanced Platform Info:", get_enhanced_platform_info())
