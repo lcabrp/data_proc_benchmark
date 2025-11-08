@@ -8,6 +8,18 @@ The format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.
 ## [Unreleased]
 
 ### Added
+- **Memory Optimization Control**: New `--optimize {auto,always,never}` flag for flexible memory optimization
+  - `auto` mode: Applies optimization based on system memory threshold (default: 16GB)
+  - `always` mode: Forces optimization regardless of system memory
+  - `never` mode: Disables optimization even on low-memory systems
+- Custom memory threshold support via `--mem-threshold` / `-m` flag (default: 16GB)
+- Enhanced result tracking with optimization mode in CSV script names:
+  - `benchmark.py_opt_auto_mem15GB` - Auto mode with optimization applied
+  - `benchmark.py_opt_always` - Forced optimization
+  - `benchmark.py_opt_never` - Optimization disabled
+  - `benchmark.py_no_opt_auto_mem64GB` - Auto mode without optimization
+- Comprehensive optimization mode usage documentation in `OPTIMIZATION_MODE_USAGE.md`
+- Test scripts for all optimization modes (`benchmark_test_sh.sh`, `benchmark_test_win.bat`)
 - Enhanced WSL detection and platform-aware system identification
 - Centralized platform detection utilities in `utils/platform_utils.py`
 - Project-wide consistent WSL1/WSL2 differentiation in CSV output
@@ -17,6 +29,10 @@ The format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.
 - Comprehensive system information collection with WSL awareness
 
 ### Changed
+- **Breaking**: Replaced `--force-optimize` / `-f` flag with more flexible `--optimize` / `-opt` tri-state option
+- Memory optimization now conditional by default (based on system memory vs threshold)
+- Enhanced status messages showing current optimization mode and decision rationale
+- CSV tracking now includes optimization mode and memory context for better analysis
 - **Breaking**: CSV `system` column now shows "WSL1"/"WSL2" instead of generic "Linux" for WSL environments
 - Enhanced `utils/host_info.py` with WSL detection integration
 - Updated `benchmark.py` to use centralized platform detection
@@ -27,10 +43,12 @@ The format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.
 - Improved memory usage reporting and cleanup messaging
 
 ### Removed
+- Deprecated `--force-optimize` / `-f` flag (replaced by `--optimize always`)
 - Manual FireDucks detection code from all benchmark scripts (replaced with centralized detection)
 - Manual platform detection code duplicated across scripts
 - Unused imports and redundant functions in benchmark scripts
 - Commented-out manual detection code blocks
+- Duplicate header output in pandas/fireducks benchmark sequence
 
 ### Fixed
 - WSL environments now properly identified as "WSL2" instead of "Linux" in analysis
@@ -38,6 +56,7 @@ The format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.
 - Import cleanup to remove Pylance warnings for unused imports
 - Enhanced CSV data quality for platform-based analysis
 - Proper error handling in platform detection with graceful fallbacks
+- Removed duplicate "BENCHMARKING PANDAS + FIREDUCKS SEQUENCE" header
 
 ### Technical Improvements
 - **DRY Principle**: Eliminated code duplication across benchmark scripts

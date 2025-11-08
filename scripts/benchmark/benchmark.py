@@ -48,31 +48,39 @@ _current_library_data = None
 _current_library_name = None
 
 # Global optimization settings (set by CLI arguments)
-_force_optimize = False
+_optimize_mode = "auto"  # Options: "auto", "always", "never"
 _memory_threshold_gb = 16.0
 _optimization_applied = False
 
 def should_optimize_memory() -> bool:
     """
-    Determine if memory optimization should be applied based on system memory and CLI flags.
+    Determine if memory optimization should be applied based on CLI mode and system memory.
     
     Returns:
         bool: True if optimization should be applied
     """
-    global _force_optimize, _memory_threshold_gb
+    global _optimize_mode, _memory_threshold_gb
     
-    # Force optimization if explicitly requested
-    if _force_optimize:
+    # Always optimize if explicitly requested
+    if _optimize_mode == "always":
         return True
     
-    # Check system memory against threshold
-    try:
-        total_memory_gb = psutil.virtual_memory().total / (1024**3)
-        should_optimize = total_memory_gb < _memory_threshold_gb
-        return should_optimize
-    except Exception:
-        # If we can't determine memory, default to optimization for safety
-        return True
+    # Never optimize if explicitly disabled
+    if _optimize_mode == "never":
+        return False
+    
+    # Auto mode: check system memory against threshold
+    if _optimize_mode == "auto":
+        try:
+            total_memory_gb = psutil.virtual_memory().total / (1024**3)
+            should_optimize = total_memory_gb < _memory_threshold_gb
+            return should_optimize
+        except Exception:
+            # If we can't determine memory, default to optimization for safety
+            return True
+    
+    # Fallback to auto behavior
+    return True
 
 def load_and_optimize_for_library(library: str):
     """
@@ -114,8 +122,10 @@ def load_and_optimize_for_library(library: str):
         if library in ["pandas", "fireducks"]:
             try:
                 total_memory_gb = psutil.virtual_memory().total / (1024**3)
-                if _force_optimize:
-                    print(f"  System has {total_memory_gb:.1f}GB RAM - optimization FORCED via CLI flag")
+                if _optimize_mode == "always":
+                    print(f"  System has {total_memory_gb:.1f}GB RAM - optimization FORCED via --optimize always")
+                elif _optimize_mode == "never":
+                    print(f"  System has {total_memory_gb:.1f}GB RAM - optimization DISABLED via --optimize never")
                 elif should_optimize:
                     print(f"  System has {total_memory_gb:.1f}GB RAM (< {_memory_threshold_gb}GB threshold) - applying optimization")
                 else:
@@ -570,10 +580,6 @@ def run_pandas_fireducks_sequence(operation_definitions) -> dict:
         
         return results
     
-    print(f"\n{'=' * 60}")
-    print(f"BENCHMARKING PANDAS + FIREDUCKS SEQUENCE (SHARED OPTIMIZATION)")
-    print(f"{'=' * 60}")
-    
     # Load and optimize data once for pandas
     pandas_data = load_and_optimize_for_library("pandas")
     if pandas_data is None:
@@ -726,42 +732,36 @@ def _write_one_results_csv(path: Path, results: dict, host_info: dict, script_na
             writer.writerow(row)
 
 def write_results_to_csv(results: dict, dataset_size: int) -> None:
-<<<<<<< HEAD
-    """Write benchmark results to CSV file."""
-    host_info = get_host_info()
+    """Write benchmark results to CSV file with enhanced platform detection."""
+    host_info = get_host_info()  # Now includes WSL detection automatically
     
     # Create enhanced script name with optimization info
     base_script_name = Path(__file__).name
     try:
         total_memory_gb = psutil.virtual_memory().total / (1024**3)
-        if _force_optimize:
-            opt_info = f"forced_opt"
+        if _optimize_mode == "always":
+            opt_info = f"opt_always"
+        elif _optimize_mode == "never":
+            opt_info = f"opt_never"
         elif _optimization_applied:
-            opt_info = f"opt_mem{total_memory_gb:.0f}GB"
+            opt_info = f"opt_auto_mem{total_memory_gb:.0f}GB"
         else:
-            opt_info = f"no_opt_mem{total_memory_gb:.0f}GB"
+            opt_info = f"no_opt_auto_mem{total_memory_gb:.0f}GB"
         script_name = f"{base_script_name}_{opt_info}"
     except Exception:
         script_name = f"{base_script_name}_opt_unknown"
     
-=======
-    """Write benchmark results to CSV file with enhanced platform detection."""
-    host_info = get_host_info()  # Now includes WSL detection automatically
-    script_name = Path(__file__).name
->>>>>>> 70df95716a8b5e04d3e201aaba4706a2e9649d1a
     _write_one_results_csv(RESULTS_CSV_PATH, results, host_info, script_name, dataset_size)
     print(f"\nResults written to: {RESULTS_CSV_PATH}")
     if _optimization_applied:
-        print(f"Note: Memory optimization was applied (tracking: {script_name})")
+        print(f"Note: Memory optimization was applied (mode: {_optimize_mode}, tracking: {script_name})")
     else:
-        print(f"Note: Memory optimization was skipped (tracking: {script_name})")
+        print(f"Note: Memory optimization was skipped (mode: {_optimize_mode}, tracking: {script_name})")
 
 def main():
     """Main function to run all benchmarks with realistic memory management."""
-<<<<<<< HEAD
-    global DATASET_PATH, RESULTS_CSV_PATH, _force_optimize, _memory_threshold_gb
-=======
-    global DATASET_PATH, RESULTS_CSV_PATH
+    global DATASET_PATH, RESULTS_CSV_PATH, _optimize_mode, _memory_threshold_gb
+
     # Simple host information display (matching benchmark_01.py style)
     print("=" * 60)
     print("COMPREHENSIVE DATA PROCESSING BENCHMARK")
@@ -792,18 +792,21 @@ def main():
     print(f"CPU: {cpu_brand} ({logical_cores} logical cores)")
     print(f"Memory: {memory_total:.2f} GB total")
     print()
->>>>>>> 70df95716a8b5e04d3e201aaba4706a2e9649d1a
 
     # Parse command line arguments
     parser = argparse.ArgumentParser(description="Run comprehensive data processing benchmarks")
     parser.add_argument("--dataset", "-d", type=Path, help="Path to dataset file (overrides default)")
     parser.add_argument("--output", "-o", type=Path, help="Path to output CSV file (overrides default)")
-    parser.add_argument("--force-optimize", "-f", action="store_true", help="Force memory optimization regardless of system memory")
-    parser.add_argument("--mem-threshold", "-m", type=float, default=16.0, help="Memory threshold in GB below which optimization is applied (default: 16)")
+    parser.add_argument("--optimize", "-opt", 
+                        choices=["auto", "always", "never"], 
+                        default="auto",
+                        help="Memory optimization mode: 'auto' (use threshold), 'always' (force), 'never' (disable) (default: auto)")
+    parser.add_argument("--mem-threshold", "-m", type=float, default=16.0, 
+                        help="Memory threshold in GB for 'auto' mode (default: 16)")
     args = parser.parse_args()
 
     # Set global optimization settings
-    _force_optimize = args.force_optimize
+    _optimize_mode = args.optimize
     _memory_threshold_gb = args.mem_threshold
 
     # Override paths if provided via CLI
@@ -829,10 +832,12 @@ def main():
     
     # Show optimization settings
     print(f"Memory optimization settings:")
-    if _force_optimize:
-        print(f"  - FORCED via --force-optimize flag")
-    else:
-        print(f"  - Applied if system memory < {_memory_threshold_gb}GB")
+    if _optimize_mode == "always":
+        print(f"  - Mode: always (forced optimization)")
+    elif _optimize_mode == "never":
+        print(f"  - Mode: never (optimization disabled)")
+    else:  # auto
+        print(f"  - Mode: auto (optimize if system memory < {_memory_threshold_gb}GB)")
     
     initial_memory = get_memory_usage()
     print(f"Initial memory usage: {initial_memory:.2f}GB")

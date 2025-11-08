@@ -19,6 +19,40 @@ Deep dive into architecture, library setup (including Modin), and developer tool
 
 The Data Processing Benchmark project evolved through multiple iterations to solve real-world cross-platform compatibility issues, memory management challenges, and reliability concerns when testing data processing libraries at scale.
 
+### Memory Optimization Strategy
+
+Starting from version 0.1.5, the benchmark includes intelligent memory optimization with flexible user control:
+
+**Optimization Techniques**:
+- **Type optimization**: Converts DataFrame columns to optimal types (category, uint16/uint32, float32)
+- **Memory reduction**: Achieves up to 94% reduction in memory footprint (5.5GB → 334MB)
+- **Performance gain**: Provides 2-3x speedup for pandas/FireDucks operations on optimized data
+
+**Conditional Application**:
+- **Auto mode** (default): Applies optimization only when system memory < threshold
+- **Always mode**: Forces optimization for consistent behavior across systems
+- **Never mode**: Disables optimization for raw performance testing
+
+**Example Optimizations** (10M row dataset):
+```
+Original DataFrame:
+  timestamp         : object     → datetime64[ns]   (50% reduction)
+  source_ip         : object     → category         (90% reduction)
+  destination_ip    : object     → category         (90% reduction)
+  port              : int64      → uint16           (75% reduction)
+  bytes             : int64      → uint32           (50% reduction)
+  response_time_ms  : int64      → uint16           (75% reduction)
+  risk_score        : float64    → float32          (50% reduction)
+  event_type        : object     → category         (90% reduction)
+  
+Overall: 5518.3MB → 333.8MB (94% reduction)
+```
+
+**System-Aware Defaults**:
+- < 16GB RAM: Optimization enabled by default (critical for performance)
+- ≥ 16GB RAM: Optimization disabled by default (raw performance priority)
+- Customizable threshold via `--mem-threshold` flag
+
 ### Test Dataset
 - **Source**: Generated using `scripts/log-gen/test_generator_01.py`
 - **Size**: 10 million records
@@ -95,10 +129,47 @@ Building on v1's foundation, v2 addressed additional reliability and usability i
 All maintained scripts (`benchmark.py`, `benchmark_01.py`, `benchmark_02.py`, `benchmark_modular.py`) now accept:
 
 ```
-    -d / --dataset   Dataset path (auto-detect fallback where supported)
-    -o / --output    Results CSV path (default data/benchmark_results.csv)
-    --repeat N       Repeat count (default 1; ignored if a script doesn't implement repetition)
+    -d / --dataset          Dataset path (auto-detect fallback where supported)
+    -o / --output           Results CSV path (default data/benchmark_results.csv)
+    --optimize / -opt       Memory optimization mode: auto (default), always, or never
+    --mem-threshold / -m    Memory threshold in GB for auto mode (default: 16)
+    --repeat N              Repeat count (default 1; ignored if a script doesn't implement repetition)
 ```
+
+#### Memory Optimization Modes
+
+The `--optimize` flag provides tri-state control over memory optimization:
+
+**Auto Mode (default)**:
+- Checks system memory against threshold (default: 16GB)
+- Applies optimization if memory < threshold
+- Customizable via `--mem-threshold` / `-m`
+- Example: `--optimize auto -m 32` (optimize if system has < 32GB)
+
+**Always Mode**:
+- Forces optimization regardless of system memory
+- Useful for testing optimized performance on high-RAM systems
+- Ensures consistent behavior across machines
+- Example: `--optimize always`
+
+**Never Mode**:
+- Disables optimization even on low-memory systems
+- Useful for benchmarking raw (non-optimized) performance
+- Allows comparison against optimized runs
+- Example: `--optimize never`
+
+**Performance Impact**:
+- Optimization provides **2-3x speedup** for pandas/FireDucks operations
+- Reduces memory usage by **94%** (5.5GB → 334MB for 10M rows)
+- Critical for systems with < 16GB RAM
+- Minimal overhead on high-memory systems when disabled
+
+**Result Tracking**:
+Results are tagged in CSV with optimization context:
+- `benchmark.py_opt_always` - Forced optimization
+- `benchmark.py_opt_never` - Optimization disabled
+- `benchmark.py_opt_auto_mem15GB` - Auto mode, optimized (15GB system)
+- `benchmark.py_no_opt_auto_mem64GB` - Auto mode, not optimized (64GB system)
 
 Removed legacy flags `--csv` and `--results` (previously only in `benchmark_01.py`). Update any local invocation scripts accordingly.
 
@@ -435,12 +506,37 @@ Recent benchmarking reveals significant performance advantages when using column
 
 *_Modin performance varies significantly based on operation complexity and available memory_
 
+### Memory Optimization Impact Analysis
+
+**10M Record Dataset** (AMD Ryzen 9 8945HS, 16 cores, 15.3GB RAM, WSL2):
+
+#### Optimized vs Non-Optimized Performance Comparison:
+
+| Library | Operation | Optimized | Non-Optimized | Slowdown | Memory |
+|---------|-----------|-----------|---------------|----------|--------|
+| **Pandas** | Filter/Group | 0.51s | 1.41s | **2.8x slower** | 16.5x larger |
+| **Pandas** | Statistics | 0.31s | 0.95s | **3.1x slower** | 16.5x larger |
+| **Pandas** | Complex Join | 3.79s | 8.99s | **2.4x slower** | 16.5x larger |
+| **Pandas** | Timeseries | 0.65s | 3.28s | **5.0x slower** | 16.5x larger |
+| **FireDucks** | Filter/Group | 0.39s | 1.39s | **3.6x slower** | 16.5x larger |
+| **FireDucks** | Statistics | 0.37s | 1.04s | **2.8x slower** | 16.5x larger |
+| **FireDucks** | Complex Join | 3.45s | 8.39s | **2.4x slower** | 16.5x larger |
+| **FireDucks** | Timeseries | 0.71s | 2.91s | **4.1x slower** | 16.5x larger |
+
+**Key Findings**:
+1. **Critical for Low-RAM Systems**: Without optimization, pandas/FireDucks are 2-5x slower
+2. **Massive Memory Savings**: 94% reduction (5518MB → 334MB) enables benchmarking on 16GB systems
+3. **Polars/DuckDB Unaffected**: These libraries maintain consistent performance regardless of pandas optimization
+4. **Timeseries Most Impacted**: 4-5x slowdown without optimization due to datetime operations
+5. **Optimization Mode Control**: `--optimize` flag enables flexible testing of both scenarios
+
 ### Key Insights
 
 1. **Polars Excellence**: Dominates 3/4 operations with Rust-powered performance
 2. **DuckDB Strength**: Superior for analytical/OLAP operations (timeseries)
 3. **Modin Challenges**: Memory pressure limits effectiveness on statistics operations
 4. **Pandas Reliability**: Consistent baseline performance across all operations
+5. **Memory Optimization Critical**: 2-5x performance impact on systems with < 16GB RAM
 
 ## 🛠️ Troubleshooting
 
