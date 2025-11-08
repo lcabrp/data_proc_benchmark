@@ -8,6 +8,7 @@ import sys
 import csv
 import argparse
 import os
+import psutil
 from contextlib import redirect_stderr, redirect_stdout
 from typing import cast, Optional
 from pathlib import Path
@@ -46,10 +47,38 @@ BENCHMARK_OPTIMIZATION_TYPES = {
 _current_library_data = None
 _current_library_name = None
 
+# Global optimization settings (set by CLI arguments)
+_force_optimize = False
+_memory_threshold_gb = 16.0
+_optimization_applied = False
+
+def should_optimize_memory() -> bool:
+    """
+    Determine if memory optimization should be applied based on system memory and CLI flags.
+    
+    Returns:
+        bool: True if optimization should be applied
+    """
+    global _force_optimize, _memory_threshold_gb
+    
+    # Force optimization if explicitly requested
+    if _force_optimize:
+        return True
+    
+    # Check system memory against threshold
+    try:
+        total_memory_gb = psutil.virtual_memory().total / (1024**3)
+        should_optimize = total_memory_gb < _memory_threshold_gb
+        return should_optimize
+    except Exception:
+        # If we can't determine memory, default to optimization for safety
+        return True
+
 def load_and_optimize_for_library(library: str):
     """
     Load and optimize data for a specific library, clearing any previous data.
     This ensures only one library's data is in memory at a time.
+    Memory optimization is now conditional based on system memory and CLI flags.
     
     Args:
         library: The library name ('pandas', 'polars', 'duckdb', 'fireducks')
@@ -57,7 +86,7 @@ def load_and_optimize_for_library(library: str):
     Returns:
         Optimized DataFrame in the format expected by the library
     """
-    global _current_library_data, _current_library_name, DATASET_PATH
+    global _current_library_data, _current_library_name, DATASET_PATH, _optimization_applied
     
     # Clear previous data to free memory
     if _current_library_data is not None:
@@ -78,12 +107,29 @@ def load_and_optimize_for_library(library: str):
             print(f"  Warning: Failed to load data for {library}")
             return None
         
-        # Apply optimization only for pandas-based libraries (pandas, fireducks)
-        if library in ["pandas", "fireducks"] and df is not None:
+        # Check if memory optimization should be applied
+        should_optimize = should_optimize_memory()
+        
+        # Show memory optimization decision
+        if library in ["pandas", "fireducks"]:
+            try:
+                total_memory_gb = psutil.virtual_memory().total / (1024**3)
+                if _force_optimize:
+                    print(f"  System has {total_memory_gb:.1f}GB RAM - optimization FORCED via CLI flag")
+                elif should_optimize:
+                    print(f"  System has {total_memory_gb:.1f}GB RAM (< {_memory_threshold_gb}GB threshold) - applying optimization")
+                else:
+                    print(f"  System has {total_memory_gb:.1f}GB RAM (≥ {_memory_threshold_gb}GB threshold) - skipping optimization")
+            except Exception:
+                print(f"  Could not determine system memory - applying optimization for safety")
+        
+        # Apply optimization only for pandas-based libraries (pandas, fireducks) and when needed
+        if library in ["pandas", "fireducks"] and df is not None and should_optimize:
             original_memory = df.memory_usage(deep=True).sum()
             
             # Use existing optimize_df_types function - DRY principle!
-            optimized_df = optimize_df_types(df, BENCHMARK_OPTIMIZATION_TYPES)
+            # Pass copy=False as positional argument
+            optimized_df = optimize_df_types(df, BENCHMARK_OPTIMIZATION_TYPES, False)
             
             # Calculate and report memory savings
             optimized_memory = optimized_df.memory_usage(deep=True).sum()
@@ -94,6 +140,10 @@ def load_and_optimize_for_library(library: str):
                       f"({original_memory/1024/1024:.1f}MB → {optimized_memory/1024/1024:.1f}MB)")
             
             df = optimized_df
+            _optimization_applied = True
+        elif library in ["pandas", "fireducks"] and not should_optimize:
+            print(f"  {library} DataFrame loaded without memory optimization")
+            _optimization_applied = False
         
         # Cache the current library's data
         _current_library_data = df
@@ -484,6 +534,97 @@ def run_benchmark_operation(library_name, operation_func, operation_name):
         print(f"ERROR after {duration:.4f}s: {str(e)[:100]}")
         return None, None
 
+def run_pandas_fireducks_sequence(operation_definitions) -> dict:
+    """
+    Run pandas and fireducks consecutively sharing the same optimized DataFrame.
+    This avoids duplicate optimization time when both libraries are used.
+    """
+    results = {}
+    
+    if not FIREDUCKS_AVAILABLE:
+        # If FireDucks is not available, run pandas normally but without duplicate header
+        pandas_data = load_and_optimize_for_library("pandas")
+        if pandas_data is None:
+            print("  Failed to load pandas data, skipping pandas")
+            return {}
+        
+        # Run pandas operations
+        library_operations = {}
+        for op_name, op_funcs in operation_definitions:
+            library_operations[op_name] = op_funcs["pandas"]
+        
+        pandas_results = {}
+        for operation_name, operation_func in library_operations.items():
+            duration, result = run_benchmark_operation("pandas", operation_func, operation_name)
+            pandas_results[operation_name] = duration
+            
+            # Clear operation results immediately to save memory
+            if result is not None:
+                del result
+        
+        results["pandas"] = pandas_results
+        
+        # Clear data after pandas
+        clear_current_data()
+        print(f"  pandas data references cleared")
+        
+        return results
+    
+    print(f"\n{'=' * 60}")
+    print(f"BENCHMARKING PANDAS + FIREDUCKS SEQUENCE (SHARED OPTIMIZATION)")
+    print(f"{'=' * 60}")
+    
+    # Load and optimize data once for pandas
+    pandas_data = load_and_optimize_for_library("pandas")
+    if pandas_data is None:
+        print("  Failed to load pandas data, skipping both pandas and fireducks")
+        return {}
+    
+    # Run pandas operations
+    print(f"\nRunning pandas operations...")
+    library_operations = {}
+    for op_name, op_funcs in operation_definitions:
+        library_operations[op_name] = op_funcs["pandas"]
+    
+    pandas_results = {}
+    for operation_name, operation_func in library_operations.items():
+        duration, result = run_benchmark_operation("pandas", operation_func, operation_name)
+        pandas_results[operation_name] = duration
+        
+        # Clear operation results immediately to save memory
+        if result is not None:
+            del result
+    
+    results["pandas"] = pandas_results
+    
+    # Reuse the same data for fireducks without re-optimization
+    print(f"\nReusing optimized data for fireducks (avoiding duplicate optimization)...")
+    global _current_library_name
+    _current_library_name = "fireducks"  # Switch library context but keep same data
+    
+    # Run fireducks operations
+    print(f"\nRunning fireducks operations...")
+    library_operations = {}
+    for op_name, op_funcs in operation_definitions:
+        library_operations[op_name] = op_funcs["fireducks"]
+    
+    fireducks_results = {}
+    for operation_name, operation_func in library_operations.items():
+        duration, result = run_benchmark_operation("fireducks", operation_func, operation_name)
+        fireducks_results[operation_name] = duration
+        
+        # Clear operation results immediately to save memory
+        if result is not None:
+            del result
+    
+    results["fireducks"] = fireducks_results
+    
+    # Clear shared data after both libraries are done
+    clear_current_data()
+    print(f"  Shared pandas/fireducks data references cleared")
+    
+    return results
+
 def run_library_benchmarks(library_name: str, operations: dict) -> dict:
     """
     Run all benchmark operations for a single library.
@@ -585,15 +726,41 @@ def _write_one_results_csv(path: Path, results: dict, host_info: dict, script_na
             writer.writerow(row)
 
 def write_results_to_csv(results: dict, dataset_size: int) -> None:
+<<<<<<< HEAD
+    """Write benchmark results to CSV file."""
+    host_info = get_host_info()
+    
+    # Create enhanced script name with optimization info
+    base_script_name = Path(__file__).name
+    try:
+        total_memory_gb = psutil.virtual_memory().total / (1024**3)
+        if _force_optimize:
+            opt_info = f"forced_opt"
+        elif _optimization_applied:
+            opt_info = f"opt_mem{total_memory_gb:.0f}GB"
+        else:
+            opt_info = f"no_opt_mem{total_memory_gb:.0f}GB"
+        script_name = f"{base_script_name}_{opt_info}"
+    except Exception:
+        script_name = f"{base_script_name}_opt_unknown"
+    
+=======
     """Write benchmark results to CSV file with enhanced platform detection."""
     host_info = get_host_info()  # Now includes WSL detection automatically
     script_name = Path(__file__).name
+>>>>>>> 70df95716a8b5e04d3e201aaba4706a2e9649d1a
     _write_one_results_csv(RESULTS_CSV_PATH, results, host_info, script_name, dataset_size)
     print(f"\nResults written to: {RESULTS_CSV_PATH}")
+    if _optimization_applied:
+        print(f"Note: Memory optimization was applied (tracking: {script_name})")
+    else:
+        print(f"Note: Memory optimization was skipped (tracking: {script_name})")
 
-# Main benchmark execution
 def main():
     """Main function to run all benchmarks with realistic memory management."""
+<<<<<<< HEAD
+    global DATASET_PATH, RESULTS_CSV_PATH, _force_optimize, _memory_threshold_gb
+=======
     global DATASET_PATH, RESULTS_CSV_PATH
     # Simple host information display (matching benchmark_01.py style)
     print("=" * 60)
@@ -625,22 +792,31 @@ def main():
     print(f"CPU: {cpu_brand} ({logical_cores} logical cores)")
     print(f"Memory: {memory_total:.2f} GB total")
     print()
+>>>>>>> 70df95716a8b5e04d3e201aaba4706a2e9649d1a
 
     # Parse command line arguments
     parser = argparse.ArgumentParser(description="Run comprehensive data processing benchmarks")
     parser.add_argument("--dataset", "-d", type=Path, help="Path to dataset file (overrides default)")
     parser.add_argument("--output", "-o", type=Path, help="Path to output CSV file (overrides default)")
+    parser.add_argument("--force-optimize", "-f", action="store_true", help="Force memory optimization regardless of system memory")
+    parser.add_argument("--mem-threshold", "-m", type=float, default=16.0, help="Memory threshold in GB below which optimization is applied (default: 16)")
     args = parser.parse_args()
+
+    # Set global optimization settings
+    _force_optimize = args.force_optimize
+    _memory_threshold_gb = args.mem_threshold
 
     # Override paths if provided via CLI
     if args.dataset:
         DATASET_PATH = args.dataset
+        # Type check: DATASET_PATH is guaranteed to be a Path object here
+        assert isinstance(DATASET_PATH, Path), "args.dataset should be a Path object"
         if not DATASET_PATH.exists():
             print(f"Error: Dataset file not found: {DATASET_PATH}")
             sys.exit(1)
     else:
         DATASET_PATH = find_dataset()
-        if not DATASET_PATH:
+        if DATASET_PATH is None:
             print("Error: No dataset found. Use --dataset to specify a file.")
             sys.exit(1)
 
@@ -651,10 +827,18 @@ def main():
     print(f"Using dataset: {DATASET_PATH}")
     print(f"Results will be written to: {RESULTS_CSV_PATH}")
     
+    # Show optimization settings
+    print(f"Memory optimization settings:")
+    if _force_optimize:
+        print(f"  - FORCED via --force-optimize flag")
+    else:
+        print(f"  - Applied if system memory < {_memory_threshold_gb}GB")
+    
     initial_memory = get_memory_usage()
     print(f"Initial memory usage: {initial_memory:.2f}GB")
 
-    # Get dataset size
+    # Get dataset size (DATASET_PATH is guaranteed to be a Path at this point)
+    assert DATASET_PATH is not None, "DATASET_PATH should not be None at this point"
     dataset_size = get_dataset_size(DATASET_PATH)
     print(f"Dataset size: {dataset_size:,} rows")
 
@@ -686,13 +870,26 @@ def main():
         }),
     ]
 
-    # Run benchmarks for each library sequentially
+    # Run benchmarks with optimized pandas/fireducks sequence
     all_results = {}
-    libraries = ["pandas", "polars", "duckdb"]
+    
+    # Show appropriate header based on FireDucks availability
     if FIREDUCKS_AVAILABLE:
-        libraries.append("fireducks")
-
-    for library_name in libraries:
+        header_text = "PANDAS + FIREDUCKS SEQUENCE (SHARED OPTIMIZATION)"
+    else:
+        header_text = "PANDAS (FireDucks not available)"
+    
+    print(f"\n{'=' * 60}")
+    print(f"BENCHMARKING {header_text}")
+    print(f"{'=' * 60}")
+    
+    # Run pandas and fireducks consecutively to share optimization
+    pandas_fireducks_results = run_pandas_fireducks_sequence(operation_definitions)
+    all_results.update(pandas_fireducks_results)
+    
+    # Run other libraries individually
+    other_libraries = ["polars", "duckdb"]
+    for library_name in other_libraries:
         # Show memory usage before each library
         mem_before = get_memory_usage()
         print(f"\nMemory usage before {library_name}: {mem_before:.2f}GB")
@@ -738,6 +935,9 @@ def main():
         "timeseries": "Extract hour from timestamp, group by hour+event_type, count"
     }
     
+    # Determine which libraries actually ran
+    libraries_run = list(all_results.keys())
+    
     # Use the same order as operation_definitions
     for operation_name, _ in operation_definitions:
         print(f"\n{operation_name.upper().replace('_', ' ')}:")
@@ -745,7 +945,7 @@ def main():
         
         # Collect results for this operation and sort by duration (fastest first)
         operation_results = []
-        for library_name in libraries:
+        for library_name in libraries_run:
             duration = all_results.get(library_name, {}).get(operation_name)
             if duration is not None:
                 operation_results.append((library_name, duration))

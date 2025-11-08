@@ -400,7 +400,26 @@ def get_safe_int_type(series: pd.Series) -> str:
         else:
             return 'int64'
 
-def optimize_df_types( df: pd.DataFrame, df_types: dict) -> pd.DataFrame:
+def optimize_df_types(df: pd.DataFrame, df_types: dict, copy=True) -> pd.DataFrame:
+    """
+    Optimize memory usage of DataFrame based on provided types.
+    Works with both pandas and Modin DataFrames.
+    """
+    if df_types is None:
+        return df
+
+    df_optimized = df.copy() if copy else df  # <-- control copying
+    for dtype, columns in df_types.items():
+        existing = [c for c in columns if c in df_optimized.columns]
+        if existing:
+            df_optimized[existing] = df_optimized[existing].astype(dtype)
+        missing = set(columns) - set(existing)
+        for col in missing:
+            print(f"Warning: Column '{col}' not found in DataFrame")
+    return df_optimized
+
+
+def optimize_df_types_old( df: pd.DataFrame, df_types: dict) -> pd.DataFrame:
     """
     Optimize memory usage of DataFrame based on provided types.
     Works with both pandas and Modin DataFrames.
