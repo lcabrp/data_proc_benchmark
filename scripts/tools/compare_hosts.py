@@ -379,9 +379,10 @@ def print_report(result: Dict, tie_threshold_pct: float = 5.0, libs: Optional[Li
     if overall_pct is not None:
         faster = "faster" if overall_pct > 0 else "slower"
         print(f"- {result['host_b']} vs {result['host_a']} (overall): about {abs(overall_pct):.2f}% {faster} on average across all ops.")
-    # By library
+    # By library (include all selected libs, including fireducks when present)
     lib_lines = []
-    for lib in ['pandas', 'polars', 'duckdb']:
+    libs_list_bottom = [l for l in ['pandas', 'polars', 'duckdb', 'fireducks'] if l in lib_ops]
+    for lib in libs_list_bottom:
         p = rel['libs_pct'].get(lib)
         if p is not None:
             faster = "faster" if p > 0 else "slower"

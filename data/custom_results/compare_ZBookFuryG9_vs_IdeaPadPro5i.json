@@ -36,48 +36,278 @@
       "overall_median": 1.3434179134062525
     },
     "summary_b": {
-      "rows": 16,
+      "rows": 24,
       "cpu_brand": "Intel(R) Core(TM) Ultra 9 185H",
-      "cpu_logical_mean": 15.0,
-      "cpu_physical_mean": 10.0,
-      "mem_total_mean": 21.525,
-      "mem_avail_mean": 14.208125,
+      "cpu_logical_mean": 17.333333333333332,
+      "cpu_physical_mean": 12.0,
+      "mem_total_mean": 24.67,
+      "mem_avail_mean": 17.25875,
       "libs": {
         "pandas": {
-          "mean": 1.2971783082029233,
-          "median": 0.9165207302499709,
-          "n": 16
+          "mean": 1.1075117107811145,
+          "median": 0.8954004949999046,
+          "n": 24
         },
         "polars": {
-          "mean": 0.8265774873594296,
-          "median": 0.7928023233749997,
-          "n": 16
+          "mean": 0.780259312656287,
+          "median": 0.742902202625018,
+          "n": 24
         },
         "duckdb": {
-          "mean": 3.674013901671712,
-          "median": 3.842225632999927,
-          "n": 16
+          "mean": 3.3342205012290567,
+          "median": 3.2818120124993584,
+          "n": 24
         },
         "fireducks": {
-          "mean": 0.20212702640624514,
-          "median": 0.14177679637498386,
-          "n": 8
+          "mean": 0.20996954109374855,
+          "median": 0.12516104812499407,
+          "n": 16
         }
       },
-      "overall_mean": 1.717972080604062,
-      "overall_median": 1.7475429650311134
+      "overall_mean": 1.5026686566787493,
+      "overall_median": 1.4637622823750007
     },
     "relative": {
-      "overall_mean_pct": -14.055853112027956,
+      "overall_mean_pct": 0.23810193589558895,
       "libs_pct": {
-        "pandas": -21.225686813842596,
-        "polars": 2.9261265625922253,
-        "duckdb": -12.25880914843707,
-        "fireducks": 18.7841015176302
+        "pandas": -3.5007037542996793,
+        "polars": 8.365767367894533,
+        "duckdb": -1.8764852076282899,
+        "fireducks": 15.63293025651135
       }
     }
   },
   "by_os": [
+    {
+      "os": "Linux",
+      "summary_a": {
+        "rows": 8,
+        "cpu_brand": "12th Gen Intel(R) Core(TM) i7-12850HX",
+        "cpu_logical_mean": 24.0,
+        "cpu_physical_mean": 16.0,
+        "mem_total_mean": 62.4,
+        "mem_avail_mean": 53.665,
+        "libs": {
+          "pandas": {
+            "mean": 0.7535509524062576,
+            "median": 0.7874208630000084,
+            "n": 8
+          },
+          "polars": {
+            "mean": 0.8239865157499935,
+            "median": 0.8048106899999965,
+            "n": 8
+          },
+          "duckdb": {
+            "mean": 2.721966546343756,
+            "median": 2.744980323500002,
+            "n": 8
+          },
+          "fireducks": {
+            "mean": 0.21948028128125863,
+            "median": 0.0807752318749948,
+            "n": 8
+          }
+        },
+        "overall_mean": 1.1297460739453165,
+        "overall_median": 1.1370624072187603
+      },
+      "summary_b": {
+        "rows": 8,
+        "cpu_brand": "Intel(R) Core(TM) Ultra 9 185H",
+        "cpu_logical_mean": 22.0,
+        "cpu_physical_mean": 16.0,
+        "mem_total_mean": 30.96,
+        "mem_avail_mean": 23.36,
+        "libs": {
+          "pandas": {
+            "mean": 0.7281785159374969,
+            "median": 0.75606318600002,
+            "n": 8
+          },
+          "polars": {
+            "mean": 0.6876229632500017,
+            "median": 0.6445949659999997,
+            "n": 8
+          },
+          "duckdb": {
+            "mean": 2.654633700343746,
+            "median": 2.7081993508749846,
+            "n": 8
+          },
+          "fireducks": {
+            "mean": 0.21781205578125196,
+            "median": 0.07874434662500818,
+            "n": 8
+          }
+        },
+        "overall_mean": 1.0720618088281242,
+        "overall_median": 1.0473667611250015
+      },
+      "relative": {
+        "overall_mean_pct": 5.105949597660154,
+        "libs_pct": {
+          "pandas": 3.3670498839847185,
+          "polars": 16.549245636122272,
+          "duckdb": 2.473683818430976,
+          "fireducks": 0.7600798988720449
+        }
+      },
+      "by_format": [
+        {
+          "format": "csv",
+          "summary_a": {
+            "rows": 5,
+            "cpu_brand": "12th Gen Intel(R) Core(TM) i7-12850HX",
+            "cpu_logical_mean": 24.0,
+            "cpu_physical_mean": 16.0,
+            "mem_total_mean": 62.4,
+            "mem_avail_mean": 54.256,
+            "libs": {
+              "pandas": {
+                "mean": 0.7596230526000113,
+                "median": 0.7790548840000042,
+                "n": 5
+              },
+              "polars": {
+                "mean": 0.8241923475499903,
+                "median": 0.808376571249994,
+                "n": 5
+              },
+              "duckdb": {
+                "mean": 2.8233785509000113,
+                "median": 2.8804588527500243,
+                "n": 5
+              },
+              "fireducks": {
+                "mean": 0.19153853070000365,
+                "median": 0.08083192875000123,
+                "n": 5
+              }
+            },
+            "overall_mean": 1.1496831204375042,
+            "overall_median": 1.1385056830000053
+          },
+          "summary_b": {
+            "rows": 5,
+            "cpu_brand": "Intel(R) Core(TM) Ultra 9 185H",
+            "cpu_logical_mean": 22.0,
+            "cpu_physical_mean": 16.0,
+            "mem_total_mean": 30.96,
+            "mem_avail_mean": 23.881999999999998,
+            "libs": {
+              "pandas": {
+                "mean": 0.7333810043499966,
+                "median": 0.7562808397500191,
+                "n": 5
+              },
+              "polars": {
+                "mean": 0.6579167297000055,
+                "median": 0.6438074880000073,
+                "n": 5
+              },
+              "duckdb": {
+                "mean": 2.705064560899993,
+                "median": 2.7298440927499854,
+                "n": 5
+              },
+              "fireducks": {
+                "mean": 0.18706274120001468,
+                "median": 0.08180487274999848,
+                "n": 5
+              }
+            },
+            "overall_mean": 1.0708562590375024,
+            "overall_median": 1.052128054875002
+          },
+          "relative": {
+            "overall_mean_pct": 6.856398950173749,
+            "libs_pct": {
+              "pandas": 3.454614517054778,
+              "polars": 20.17437050274233,
+              "duckdb": 4.190511044376372,
+              "fireducks": 2.3367567265090696
+            }
+          }
+        },
+        {
+          "format": "parquet",
+          "summary_a": {
+            "rows": 3,
+            "cpu_brand": "12th Gen Intel(R) Core(TM) i7-12850HX",
+            "cpu_logical_mean": 24.0,
+            "cpu_physical_mean": 16.0,
+            "mem_total_mean": 62.4,
+            "mem_avail_mean": 52.68,
+            "libs": {
+              "pandas": {
+                "mean": 0.7434307854166681,
+                "median": 0.7957868420000125,
+                "n": 3
+              },
+              "polars": {
+                "mean": 0.8236434627499989,
+                "median": 0.7813144850000242,
+                "n": 3
+              },
+              "duckdb": {
+                "mean": 2.5529465387499974,
+                "median": 2.528376109000021,
+                "n": 3
+              },
+              "fireducks": {
+                "mean": 0.26604986558335025,
+                "median": 0.08071853499998838,
+                "n": 3
+              }
+            },
+            "overall_mean": 1.0965176631250035,
+            "overall_median": 1.0457481606250312
+          },
+          "summary_b": {
+            "rows": 3,
+            "cpu_brand": "Intel(R) Core(TM) Ultra 9 185H",
+            "cpu_logical_mean": 22.0,
+            "cpu_physical_mean": 16.0,
+            "mem_total_mean": 30.96,
+            "mem_avail_mean": 22.49,
+            "libs": {
+              "pandas": {
+                "mean": 0.7195077019166641,
+                "median": 0.7558455322500208,
+                "n": 3
+              },
+              "polars": {
+                "mean": 0.7371333524999955,
+                "median": 0.7316068982500212,
+                "n": 3
+              },
+              "duckdb": {
+                "mean": 2.570582266083335,
+                "median": 2.461006640999983,
+                "n": 3
+              },
+              "fireducks": {
+                "mean": 0.26906091341664745,
+                "median": 0.07558381374997225,
+                "n": 3
+              }
+            },
+            "overall_mean": 1.0740710584791604,
+            "overall_median": 1.0252842417499934
+          },
+          "relative": {
+            "overall_mean_pct": 2.047080991096102,
+            "libs_pct": {
+              "pandas": 3.2179301650248253,
+              "polars": 10.503344488543814,
+              "duckdb": -0.6907989284402487,
+              "fireducks": -1.131760704593881
+            }
+          }
+        }
+      ]
+    },
     {
       "os": "WSL2",
       "summary_a": {
