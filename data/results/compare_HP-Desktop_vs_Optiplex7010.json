@@ -1,0 +1,512 @@
+{
+  "host_a": "HP-Desktop",
+  "host_b": "Optiplex7010",
+  "tie_threshold_pct": 5.0,
+  "overall": {
+    "summary_a": {
+      "rows": 71,
+      "cpu_brand": "12th Gen Intel(R) Core(TM) i9-12900",
+      "cpu_logical_mean": 24.0,
+      "cpu_physical_mean": 13.915492957746478,
+      "mem_total_mean": 93.81070422535211,
+      "mem_avail_mean": 72.78507042253521,
+      "libs": {
+        "pandas": {
+          "mean": 1.8987352461692926,
+          "median": 0.8506429869997874,
+          "n": 71
+        },
+        "polars": {
+          "mean": 0.840251455374197,
+          "median": 0.7659367750165984,
+          "n": 71
+        },
+        "duckdb": {
+          "mean": 2.995934241336848,
+          "median": 2.9776538527503362,
+          "n": 71
+        },
+        "fireducks": {
+          "mean": 0.16742038096620687,
+          "median": 0.10166497000000163,
+          "n": 37
+        }
+      },
+      "overall_mean": 1.7350015803412728,
+      "overall_median": 1.2750995197500146
+    },
+    "summary_b": {
+      "rows": 32,
+      "cpu_brand": "13th Gen Intel(R) Core(TM) i9-13900",
+      "cpu_logical_mean": 32.0,
+      "cpu_physical_mean": 22.0,
+      "mem_total_mean": 55.27,
+      "mem_avail_mean": 44.103125,
+      "libs": {
+        "pandas": {
+          "mean": 1.6148270431819278,
+          "median": 0.8695192728749959,
+          "n": 32
+        },
+        "polars": {
+          "mean": 0.785712589026792,
+          "median": 0.7492864186250188,
+          "n": 32
+        },
+        "duckdb": {
+          "mean": 2.8953781300608443,
+          "median": 2.7424936249999874,
+          "n": 32
+        },
+        "fireducks": {
+          "mean": 0.1814219566875099,
+          "median": 0.10935540437498044,
+          "n": 16
+        }
+      },
+      "overall_mean": 1.5964571665768352,
+      "overall_median": 1.47941399459374
+    },
+    "relative": {
+      "overall_mean_pct": 7.985261531415209,
+      "libs_pct": {
+        "pandas": 14.95249027267761,
+        "polars": 6.490779158855096,
+        "duckdb": 3.3564191726429016,
+        "fireducks": -8.363124991412601
+      }
+    }
+  },
+  "by_os": [
+    {
+      "os": "WSL2",
+      "summary_a": {
+        "rows": 37,
+        "cpu_brand": "12th Gen Intel(R) Core(TM) i9-12900",
+        "cpu_logical_mean": 24.0,
+        "cpu_physical_mean": 12.0,
+        "mem_total_mean": 62.66,
+        "mem_avail_mean": 57.46297297297297,
+        "libs": {
+          "pandas": {
+            "mean": 0.785433519425677,
+            "median": 0.7921982269999148,
+            "n": 37
+          },
+          "polars": {
+            "mean": 0.7841001800337682,
+            "median": 0.7584063849999438,
+            "n": 37
+          },
+          "duckdb": {
+            "mean": 3.000192344175698,
+            "median": 2.9827784985000108,
+            "n": 37
+          },
+          "fireducks": {
+            "mean": 0.16742038096620687,
+            "median": 0.10166497000000163,
+            "n": 37
+          }
+        },
+        "overall_mean": 1.1842866061503377,
+        "overall_median": 1.1827043953749978
+      },
+      "summary_b": {
+        "rows": 8,
+        "cpu_brand": "13th Gen Intel(R) Core(TM) i9-13900",
+        "cpu_logical_mean": 32.0,
+        "cpu_physical_mean": 16.0,
+        "mem_total_mean": 31.19,
+        "mem_avail_mean": 27.90625,
+        "libs": {
+          "pandas": {
+            "mean": 0.853109646500009,
+            "median": 0.8695192728749959,
+            "n": 8
+          },
+          "polars": {
+            "mean": 0.8765298388437497,
+            "median": 0.8720848212500201,
+            "n": 8
+          },
+          "duckdb": {
+            "mean": 3.711097307312489,
+            "median": 3.7041303480000067,
+            "n": 8
+          },
+          "fireducks": {
+            "mean": 0.1756360344687415,
+            "median": 0.11231138050000307,
+            "n": 8
+          }
+        },
+        "overall_mean": 1.4040932067812473,
+        "overall_median": 1.3806596668125035
+      },
+      "relative": {
+        "overall_mean_pct": -18.56025386839565,
+        "libs_pct": {
+          "pandas": -8.616404240529231,
+          "polars": -11.787991019974111,
+          "duckdb": -23.695312886084707,
+          "fireducks": -4.9072003391229355
+        }
+      },
+      "by_format": [
+        {
+          "format": "csv",
+          "summary_a": {
+            "rows": 26,
+            "cpu_brand": "12th Gen Intel(R) Core(TM) i9-12900",
+            "cpu_logical_mean": 24.0,
+            "cpu_physical_mean": 12.0,
+            "mem_total_mean": 62.66,
+            "mem_avail_mean": 57.753461538461536,
+            "libs": {
+              "pandas": {
+                "mean": 0.7933149930288479,
+                "median": 0.7956152799999643,
+                "n": 26
+              },
+              "polars": {
+                "mean": 0.783792264788432,
+                "median": 0.7616076838750132,
+                "n": 26
+              },
+              "duckdb": {
+                "mean": 3.0003202413173318,
+                "median": 2.9982626110001434,
+                "n": 26
+              },
+              "fireducks": {
+                "mean": 0.15965413363460368,
+                "median": 0.10009898399998815,
+                "n": 26
+              }
+            },
+            "overall_mean": 1.184270408192304,
+            "overall_median": 1.1742040428125051
+          },
+          "summary_b": {
+            "rows": 5,
+            "cpu_brand": "13th Gen Intel(R) Core(TM) i9-13900",
+            "cpu_logical_mean": 32.0,
+            "cpu_physical_mean": 16.0,
+            "mem_total_mean": 31.19,
+            "mem_avail_mean": 28.078,
+            "libs": {
+              "pandas": {
+                "mean": 0.8648678144500138,
+                "median": 0.8932207560000052,
+                "n": 5
+              },
+              "polars": {
+                "mean": 0.8721346090500021,
+                "median": 0.8785122205000278,
+                "n": 5
+              },
+              "duckdb": {
+                "mean": 3.8477403999499926,
+                "median": 3.807215163750002,
+                "n": 5
+              },
+              "fireducks": {
+                "mean": 0.163046495899988,
+                "median": 0.10945852250000593,
+                "n": 5
+              }
+            },
+            "overall_mean": 1.436947329837499,
+            "overall_median": 1.3909372835625042
+          },
+          "relative": {
+            "overall_mean_pct": -21.336083372283763,
+            "libs_pct": {
+              "pandas": -9.019471716774172,
+              "polars": -11.271142652245514,
+              "duckdb": -28.24432362128749,
+              "fireducks": -2.1248195634873572
+            }
+          }
+        },
+        {
+          "format": "parquet",
+          "summary_a": {
+            "rows": 11,
+            "cpu_brand": "12th Gen Intel(R) Core(TM) i9-12900",
+            "cpu_logical_mean": 24.0,
+            "cpu_physical_mean": 12.0,
+            "mem_total_mean": 62.66,
+            "mem_avail_mean": 56.776363636363634,
+            "libs": {
+              "pandas": {
+                "mean": 0.766804581818182,
+                "median": 0.787830342999996,
+                "n": 11
+              },
+              "polars": {
+                "mean": 0.7848279797045631,
+                "median": 0.7523341787499476,
+                "n": 11
+              },
+              "duckdb": {
+                "mean": 2.999890041840928,
+                "median": 2.9827784985000108,
+                "n": 11
+              },
+              "fireducks": {
+                "mean": 0.18577696556817808,
+                "median": 0.10907670274991688,
+                "n": 11
+              }
+            },
+            "overall_mean": 1.1843248922329628,
+            "overall_median": 1.1936853797500646
+          },
+          "summary_b": {
+            "rows": 3,
+            "cpu_brand": "13th Gen Intel(R) Core(TM) i9-13900",
+            "cpu_logical_mean": 32.0,
+            "cpu_physical_mean": 16.0,
+            "mem_total_mean": 31.19,
+            "mem_avail_mean": 27.62,
+            "libs": {
+              "pandas": {
+                "mean": 0.8335126999166675,
+                "median": 0.856916562250035,
+                "n": 3
+              },
+              "polars": {
+                "mean": 0.8838552218333291,
+                "median": 0.8391393255000139,
+                "n": 3
+              },
+              "duckdb": {
+                "mean": 3.483358819583316,
+                "median": 3.346213368249977,
+                "n": 3
+              },
+              "fireducks": {
+                "mean": 0.19661859874999735,
+                "median": 0.11489496224999123,
+                "n": 3
+              }
+            },
+            "overall_mean": 1.3493363350208274,
+            "overall_median": 1.2887191629999677
+          },
+          "relative": {
+            "overall_mean_pct": -13.93295402891912,
+            "libs_pct": {
+              "pandas": -8.699493936292464,
+              "polars": -12.61770027185363,
+              "duckdb": -16.116216627916806,
+              "fireducks": -5.8358328486318785
+            }
+          }
+        }
+      ]
+    },
+    {
+      "os": "Windows",
+      "summary_a": {
+        "rows": 34,
+        "cpu_brand": "12th Gen Intel(R) Core(TM) i9-12900",
+        "cpu_logical_mean": 24.0,
+        "cpu_physical_mean": 16.0,
+        "mem_total_mean": 127.71,
+        "mem_avail_mean": 89.45911764705882,
+        "libs": {
+          "pandas": {
+            "mean": 3.1102694782138154,
+            "median": 1.6839829875098076,
+            "n": 34
+          },
+          "polars": {
+            "mean": 0.9013572550093694,
+            "median": 0.8023269250006706,
+            "n": 34
+          },
+          "duckdb": {
+            "mean": 2.9913004235416283,
+            "median": 2.925524637511444,
+            "n": 34
+          }
+        },
+        "overall_mean": 2.334309052254938,
+        "overall_median": 1.7956070041667167
+      },
+      "summary_b": {
+        "rows": 16,
+        "cpu_brand": "13th Gen Intel(R) Core(TM) i9-13900",
+        "cpu_logical_mean": 32.0,
+        "cpu_physical_mean": 24.0,
+        "mem_total_mean": 63.7,
+        "mem_avail_mean": 47.777499999999996,
+        "libs": {
+          "pandas": {
+            "mean": 2.4920939696294804,
+            "median": 1.4412336250000592,
+            "n": 16
+          },
+          "polars": {
+            "mean": 0.7990416681942074,
+            "median": 0.7346815000000184,
+            "n": 16
+          },
+          "duckdb": {
+            "mean": 2.7040639163404454,
+            "median": 2.7424936249999874,
+            "n": 16
+          }
+        },
+        "overall_mean": 1.9983998513880443,
+        "overall_median": 1.659627762499993
+      },
+      "relative": {
+        "overall_mean_pct": 14.390091172478039,
+        "libs_pct": {
+          "pandas": 19.87530382542109,
+          "polars": 11.35128011080339,
+          "duckdb": 9.60239583228159,
+          "fireducks": null
+        }
+      },
+      "by_format": [
+        {
+          "format": "csv",
+          "summary_a": {
+            "rows": 20,
+            "cpu_brand": "12th Gen Intel(R) Core(TM) i9-12900",
+            "cpu_logical_mean": 24.0,
+            "cpu_physical_mean": 16.0,
+            "mem_total_mean": 127.71,
+            "mem_avail_mean": 90.6285,
+            "libs": {
+              "pandas": {
+                "mean": 3.43315859181057,
+                "median": 1.6906177250057226,
+                "n": 20
+              },
+              "polars": {
+                "mean": 0.9313861328917483,
+                "median": 0.8245325500010949,
+                "n": 20
+              },
+              "duckdb": {
+                "mean": 3.263904610240934,
+                "median": 3.1743109874960282,
+                "n": 20
+              }
+            },
+            "overall_mean": 2.542816444981084,
+            "overall_median": 1.8754333125061748
+          },
+          "summary_b": {
+            "rows": 10,
+            "cpu_brand": "13th Gen Intel(R) Core(TM) i9-13900",
+            "cpu_logical_mean": 32.0,
+            "cpu_physical_mean": 24.0,
+            "mem_total_mean": 63.7,
+            "mem_avail_mean": 49.176,
+            "libs": {
+              "pandas": {
+                "mean": 2.6019813307100677,
+                "median": 1.4412336250000592,
+                "n": 10
+              },
+              "polars": {
+                "mean": 0.8117032442251684,
+                "median": 0.7346815000000184,
+                "n": 10
+              },
+              "duckdb": {
+                "mean": 2.9187509424016675,
+                "median": 2.990211274999986,
+                "n": 10
+              }
+            },
+            "overall_mean": 2.110811839112301,
+            "overall_median": 1.7054453666666576
+          },
+          "relative": {
+            "overall_mean_pct": 16.989217083343068,
+            "libs_pct": {
+              "pandas": 24.21027863621524,
+              "polars": 12.849975368968721,
+              "duckdb": 10.57486995043608,
+              "fireducks": null
+            }
+          }
+        },
+        {
+          "format": "parquet",
+          "summary_a": {
+            "rows": 14,
+            "cpu_brand": "12th Gen Intel(R) Core(TM) i9-12900",
+            "cpu_logical_mean": 24.0,
+            "cpu_physical_mean": 16.0,
+            "mem_total_mean": 127.71,
+            "mem_avail_mean": 87.78857142857143,
+            "libs": {
+              "pandas": {
+                "mean": 2.648999315932737,
+                "median": 1.6663790624879766,
+                "n": 14
+              },
+              "polars": {
+                "mean": 0.8584588580345424,
+                "median": 0.7707682875006867,
+                "n": 14
+              },
+              "duckdb": {
+                "mean": 2.6018658711140494,
+                "median": 2.768269350010087,
+                "n": 14
+              }
+            },
+            "overall_mean": 2.036441348360443,
+            "overall_median": 1.7272879708240605
+          },
+          "summary_b": {
+            "rows": 6,
+            "cpu_brand": "13th Gen Intel(R) Core(TM) i9-13900",
+            "cpu_logical_mean": 32.0,
+            "cpu_physical_mean": 24.0,
+            "mem_total_mean": 63.7,
+            "mem_avail_mean": 45.446666666666665,
+            "libs": {
+              "pandas": {
+                "mean": 2.3089483678285014,
+                "median": 1.4414149374999994,
+                "n": 6
+              },
+              "polars": {
+                "mean": 0.7779390414759391,
+                "median": 0.7355688124999915,
+                "n": 6
+              },
+              "duckdb": {
+                "mean": 2.346252206238409,
+                "median": 2.554740724999938,
+                "n": 6
+              }
+            },
+            "overall_mean": 1.811046538514283,
+            "overall_median": 1.5427215458333472
+          },
+          "relative": {
+            "overall_mean_pct": 11.068072745018036,
+            "libs_pct": {
+              "pandas": 12.836958698288703,
+              "polars": 9.379577810281429,
+              "duckdb": 9.824244505201712,
+              "fireducks": null
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

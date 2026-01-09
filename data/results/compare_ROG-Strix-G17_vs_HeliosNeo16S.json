@@ -1,0 +1,81 @@
+{
+  "host_a": "ROG-Strix-G17",
+  "host_b": "HeliosNeo16S",
+  "tie_threshold_pct": 5.0,
+  "overall": {
+    "summary_a": {
+      "rows": 48,
+      "cpu_brand": "AMD Ryzen 9 7945HX with Radeon Graphics",
+      "cpu_logical_mean": 32.0,
+      "cpu_physical_mean": 16.0,
+      "mem_total_mean": 31.17,
+      "mem_avail_mean": 23.444166666666668,
+      "libs": {
+        "pandas": {
+          "mean": 1.1571546461823163,
+          "median": 0.7868094625000026,
+          "n": 48
+        },
+        "polars": {
+          "mean": 0.9280981690468901,
+          "median": 0.9229059928749308,
+          "n": 48
+        },
+        "duckdb": {
+          "mean": 3.8256140910469068,
+          "median": 3.794564546249994,
+          "n": 48
+        },
+        "fireducks": {
+          "mean": 0.3242290910625161,
+          "median": 0.1320618733751573,
+          "n": 24
+        }
+      },
+      "overall_mean": 1.7484110303997644,
+      "overall_median": 1.731060408281318
+    },
+    "summary_b": {
+      "rows": 64,
+      "cpu_brand": "Intel(R) Core(TM) Ultra 9 275HX",
+      "cpu_logical_mean": 24.0,
+      "cpu_physical_mean": 24.0,
+      "mem_total_mean": 23.30375,
+      "mem_avail_mean": 14.72046875,
+      "libs": {
+        "pandas": {
+          "mean": 1.4662245511132912,
+          "median": 1.074687978375053,
+          "n": 64
+        },
+        "polars": {
+          "mean": 0.8058170821640731,
+          "median": 0.7078214014999169,
+          "n": 64
+        },
+        "duckdb": {
+          "mean": 3.7513840454648286,
+          "median": 3.464355649125004,
+          "n": 64
+        },
+        "fireducks": {
+          "mean": 0.24124143366248826,
+          "median": 0.10818337112494802,
+          "n": 40
+        }
+      },
+      "overall_mean": 1.767966024880209,
+      "overall_median": 1.584202425812515
+    },
+    "relative": {
+      "overall_mean_pct": -1.11844378355205,
+      "libs_pct": {
+        "pandas": -26.709472752899366,
+        "polars": 13.1754474861634,
+        "duckdb": 1.9403432707914496,
+        "fireducks": 25.5953767529227
+      }
+    }
+  },
+  "by_os": []
+}

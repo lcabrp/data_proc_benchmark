@@ -1,0 +1,512 @@
+{
+  "host_a": "HP-Desktop",
+  "host_b": "ECT1250-AMZN",
+  "tie_threshold_pct": 5.0,
+  "overall": {
+    "summary_a": {
+      "rows": 71,
+      "cpu_brand": "12th Gen Intel(R) Core(TM) i9-12900",
+      "cpu_logical_mean": 24.0,
+      "cpu_physical_mean": 13.915492957746478,
+      "mem_total_mean": 93.81070422535211,
+      "mem_avail_mean": 72.78507042253521,
+      "libs": {
+        "pandas": {
+          "mean": 1.8987352461692926,
+          "median": 0.8506429869997874,
+          "n": 71
+        },
+        "polars": {
+          "mean": 0.840251455374197,
+          "median": 0.7659367750165984,
+          "n": 71
+        },
+        "duckdb": {
+          "mean": 2.995934241336848,
+          "median": 2.9776538527503362,
+          "n": 71
+        },
+        "fireducks": {
+          "mean": 0.16742038096620687,
+          "median": 0.10166497000000163,
+          "n": 37
+        }
+      },
+      "overall_mean": 1.7350015803412728,
+      "overall_median": 1.2750995197500146
+    },
+    "summary_b": {
+      "rows": 24,
+      "cpu_brand": "Intel(R) Core(TM) Ultra 7 265",
+      "cpu_logical_mean": 20.0,
+      "cpu_physical_mean": 20.0,
+      "mem_total_mean": 25.87,
+      "mem_avail_mean": 18.22458333333333,
+      "libs": {
+        "pandas": {
+          "mean": 1.0507491993332863,
+          "median": 0.8580284545000083,
+          "n": 24
+        },
+        "polars": {
+          "mean": 0.7871106845729093,
+          "median": 0.7794755625000107,
+          "n": 24
+        },
+        "duckdb": {
+          "mean": 3.2566472680314824,
+          "median": 3.3483927467500507,
+          "n": 24
+        },
+        "fireducks": {
+          "mean": 0.24016956200000017,
+          "median": 0.11408870874998911,
+          "n": 16
+        }
+      },
+      "overall_mean": 1.4814703148976287,
+      "overall_median": 1.321935442562502
+    },
+    "relative": {
+      "overall_mean_pct": 14.612739741353712,
+      "libs_pct": {
+        "pandas": 44.66057332357538,
+        "polars": 6.324389022048403,
+        "duckdb": -8.702227942703406,
+        "fireducks": -43.45300172771523
+      }
+    }
+  },
+  "by_os": [
+    {
+      "os": "WSL2",
+      "summary_a": {
+        "rows": 37,
+        "cpu_brand": "12th Gen Intel(R) Core(TM) i9-12900",
+        "cpu_logical_mean": 24.0,
+        "cpu_physical_mean": 12.0,
+        "mem_total_mean": 62.66,
+        "mem_avail_mean": 57.46297297297297,
+        "libs": {
+          "pandas": {
+            "mean": 0.785433519425677,
+            "median": 0.7921982269999148,
+            "n": 37
+          },
+          "polars": {
+            "mean": 0.7841001800337682,
+            "median": 0.7584063849999438,
+            "n": 37
+          },
+          "duckdb": {
+            "mean": 3.000192344175698,
+            "median": 2.9827784985000108,
+            "n": 37
+          },
+          "fireducks": {
+            "mean": 0.16742038096620687,
+            "median": 0.10166497000000163,
+            "n": 37
+          }
+        },
+        "overall_mean": 1.1842866061503377,
+        "overall_median": 1.1827043953749978
+      },
+      "summary_b": {
+        "rows": 8,
+        "cpu_brand": "Intel(R) Core(TM) Ultra 7 265",
+        "cpu_logical_mean": 20.0,
+        "cpu_physical_mean": 20.0,
+        "mem_total_mean": 15.35,
+        "mem_avail_mean": 13.425,
+        "libs": {
+          "pandas": {
+            "mean": 0.839366428093749,
+            "median": 0.8580284545000083,
+            "n": 8
+          },
+          "polars": {
+            "mean": 0.7975361680624982,
+            "median": 0.7795101229999943,
+            "n": 8
+          },
+          "duckdb": {
+            "mean": 3.6363471015312463,
+            "median": 3.5547319448750017,
+            "n": 8
+          },
+          "fireducks": {
+            "mean": 0.28380977006250063,
+            "median": 0.12112153374999934,
+            "n": 8
+          }
+        },
+        "overall_mean": 1.3892648669374985,
+        "overall_median": 1.321935442562502
+      },
+      "relative": {
+        "overall_mean_pct": -17.30816338905214,
+        "libs_pct": {
+          "pandas": -6.8666420943568465,
+          "polars": -1.71355502407247,
+          "duckdb": -21.20379910276492,
+          "fireducks": -69.51924755193724
+        }
+      },
+      "by_format": [
+        {
+          "format": "csv",
+          "summary_a": {
+            "rows": 26,
+            "cpu_brand": "12th Gen Intel(R) Core(TM) i9-12900",
+            "cpu_logical_mean": 24.0,
+            "cpu_physical_mean": 12.0,
+            "mem_total_mean": 62.66,
+            "mem_avail_mean": 57.753461538461536,
+            "libs": {
+              "pandas": {
+                "mean": 0.7933149930288479,
+                "median": 0.7956152799999643,
+                "n": 26
+              },
+              "polars": {
+                "mean": 0.783792264788432,
+                "median": 0.7616076838750132,
+                "n": 26
+              },
+              "duckdb": {
+                "mean": 3.0003202413173318,
+                "median": 2.9982626110001434,
+                "n": 26
+              },
+              "fireducks": {
+                "mean": 0.15965413363460368,
+                "median": 0.10009898399998815,
+                "n": 26
+              }
+            },
+            "overall_mean": 1.184270408192304,
+            "overall_median": 1.1742040428125051
+          },
+          "summary_b": {
+            "rows": 5,
+            "cpu_brand": "Intel(R) Core(TM) Ultra 7 265",
+            "cpu_logical_mean": 20.0,
+            "cpu_physical_mean": 20.0,
+            "mem_total_mean": 15.35,
+            "mem_avail_mean": 13.78,
+            "libs": {
+              "pandas": {
+                "mean": 0.8176794057999928,
+                "median": 0.7925112782500037,
+                "n": 5
+              },
+              "polars": {
+                "mean": 0.7911090408999997,
+                "median": 0.7809591112499845,
+                "n": 5
+              },
+              "duckdb": {
+                "mean": 3.64458593059999,
+                "median": 3.4925982967500033,
+                "n": 5
+              },
+              "fireducks": {
+                "mean": 0.2437099140500038,
+                "median": 0.11668817224997952,
+                "n": 5
+              }
+            },
+            "overall_mean": 1.3742710728374967,
+            "overall_median": 1.2977302513750075
+          },
+          "relative": {
+            "overall_mean_pct": -16.04368929011863,
+            "libs_pct": {
+              "pandas": -3.0712154674049996,
+              "polars": -0.9335096096594773,
+              "duckdb": -21.473230770852137,
+              "fireducks": -52.64867153880052
+            }
+          }
+        },
+        {
+          "format": "parquet",
+          "summary_a": {
+            "rows": 11,
+            "cpu_brand": "12th Gen Intel(R) Core(TM) i9-12900",
+            "cpu_logical_mean": 24.0,
+            "cpu_physical_mean": 12.0,
+            "mem_total_mean": 62.66,
+            "mem_avail_mean": 56.776363636363634,
+            "libs": {
+              "pandas": {
+                "mean": 0.766804581818182,
+                "median": 0.787830342999996,
+                "n": 11
+              },
+              "polars": {
+                "mean": 0.7848279797045631,
+                "median": 0.7523341787499476,
+                "n": 11
+              },
+              "duckdb": {
+                "mean": 2.999890041840928,
+                "median": 2.9827784985000108,
+                "n": 11
+              },
+              "fireducks": {
+                "mean": 0.18577696556817808,
+                "median": 0.10907670274991688,
+                "n": 11
+              }
+            },
+            "overall_mean": 1.1843248922329628,
+            "overall_median": 1.1936853797500646
+          },
+          "summary_b": {
+            "rows": 3,
+            "cpu_brand": "Intel(R) Core(TM) Ultra 7 265",
+            "cpu_logical_mean": 20.0,
+            "cpu_physical_mean": 20.0,
+            "mem_total_mean": 15.35,
+            "mem_avail_mean": 12.833333333333334,
+            "libs": {
+              "pandas": {
+                "mean": 0.8755114652500092,
+                "median": 0.866502866750011,
+                "n": 3
+              },
+              "polars": {
+                "mean": 0.8082480466666624,
+                "median": 0.7579211234999832,
+                "n": 3
+              },
+              "duckdb": {
+                "mean": 3.6226157197500064,
+                "median": 3.616865593,
+                "n": 3
+              },
+              "fireducks": {
+                "mean": 0.350642863416662,
+                "median": 0.12376625974999911,
+                "n": 3
+              }
+            },
+            "overall_mean": 1.414254523770835,
+            "overall_median": 1.3461406337499966
+          },
+          "relative": {
+            "overall_mean_pct": -19.414405037485604,
+            "libs_pct": {
+              "pandas": -14.176608487924092,
+              "polars": -2.984101939244756,
+              "duckdb": -20.75828344451364,
+              "fireducks": -88.74399328477566
+            }
+          }
+        }
+      ]
+    },
+    {
+      "os": "Windows",
+      "summary_a": {
+        "rows": 34,
+        "cpu_brand": "12th Gen Intel(R) Core(TM) i9-12900",
+        "cpu_logical_mean": 24.0,
+        "cpu_physical_mean": 16.0,
+        "mem_total_mean": 127.71,
+        "mem_avail_mean": 89.45911764705882,
+        "libs": {
+          "pandas": {
+            "mean": 3.1102694782138154,
+            "median": 1.6839829875098076,
+            "n": 34
+          },
+          "polars": {
+            "mean": 0.9013572550093694,
+            "median": 0.8023269250006706,
+            "n": 34
+          },
+          "duckdb": {
+            "mean": 2.9913004235416283,
+            "median": 2.925524637511444,
+            "n": 34
+          }
+        },
+        "overall_mean": 2.334309052254938,
+        "overall_median": 1.7956070041667167
+      },
+      "summary_b": {
+        "rows": 8,
+        "cpu_brand": "Intel(R) Core(TM) Ultra 7 265",
+        "cpu_logical_mean": 20.0,
+        "cpu_physical_mean": 20.0,
+        "mem_total_mean": 31.46,
+        "mem_avail_mean": 17.4925,
+        "libs": {
+          "pandas": {
+            "mean": 1.6788071312498687,
+            "median": 1.7538957749993642,
+            "n": 8
+          },
+          "polars": {
+            "mean": 0.851036203124977,
+            "median": 0.8118079499990927,
+            "n": 8
+          },
+          "duckdb": {
+            "mean": 3.5115062625006885,
+            "median": 3.3811493249986597,
+            "n": 8
+          }
+        },
+        "overall_mean": 2.0137831989585115,
+        "overall_median": 1.9820443833329286
+      },
+      "relative": {
+        "overall_mean_pct": 13.731080423425468,
+        "libs_pct": {
+          "pandas": 46.023740289732565,
+          "polars": 5.582808770299333,
+          "duckdb": -17.390624989219535,
+          "fireducks": null
+        }
+      },
+      "by_format": [
+        {
+          "format": "csv",
+          "summary_a": {
+            "rows": 20,
+            "cpu_brand": "12th Gen Intel(R) Core(TM) i9-12900",
+            "cpu_logical_mean": 24.0,
+            "cpu_physical_mean": 16.0,
+            "mem_total_mean": 127.71,
+            "mem_avail_mean": 90.6285,
+            "libs": {
+              "pandas": {
+                "mean": 3.43315859181057,
+                "median": 1.6906177250057226,
+                "n": 20
+              },
+              "polars": {
+                "mean": 0.9313861328917483,
+                "median": 0.8245325500010949,
+                "n": 20
+              },
+              "duckdb": {
+                "mean": 3.263904610240934,
+                "median": 3.1743109874960282,
+                "n": 20
+              }
+            },
+            "overall_mean": 2.542816444981084,
+            "overall_median": 1.8754333125061748
+          },
+          "summary_b": {
+            "rows": 5,
+            "cpu_brand": "Intel(R) Core(TM) Ultra 7 265",
+            "cpu_logical_mean": 20.0,
+            "cpu_physical_mean": 20.0,
+            "mem_total_mean": 31.46,
+            "mem_avail_mean": 18.418,
+            "libs": {
+              "pandas": {
+                "mean": 1.7572445100006007,
+                "median": 1.7197232500002428,
+                "n": 5
+              },
+              "polars": {
+                "mean": 0.8426950599998235,
+                "median": 0.8030780499975663,
+                "n": 5
+              },
+              "duckdb": {
+                "mean": 3.5575951250008075,
+                "median": 3.385670224997739,
+                "n": 5
+              }
+            },
+            "overall_mean": 2.0525115650004104,
+            "overall_median": 2.0087373333323435
+          },
+          "relative": {
+            "overall_mean_pct": 19.281961187108852,
+            "libs_pct": {
+              "pandas": 48.8155160034751,
+              "polars": 9.522481574484965,
+              "duckdb": -8.998134131689408,
+              "fireducks": null
+            }
+          }
+        },
+        {
+          "format": "parquet",
+          "summary_a": {
+            "rows": 14,
+            "cpu_brand": "12th Gen Intel(R) Core(TM) i9-12900",
+            "cpu_logical_mean": 24.0,
+            "cpu_physical_mean": 16.0,
+            "mem_total_mean": 127.71,
+            "mem_avail_mean": 87.78857142857143,
+            "libs": {
+              "pandas": {
+                "mean": 2.648999315932737,
+                "median": 1.6663790624879766,
+                "n": 14
+              },
+              "polars": {
+                "mean": 0.8584588580345424,
+                "median": 0.7707682875006867,
+                "n": 14
+              },
+              "duckdb": {
+                "mean": 2.6018658711140494,
+                "median": 2.768269350010087,
+                "n": 14
+              }
+            },
+            "overall_mean": 2.036441348360443,
+            "overall_median": 1.7272879708240605
+          },
+          "summary_b": {
+            "rows": 3,
+            "cpu_brand": "Intel(R) Core(TM) Ultra 7 265",
+            "cpu_logical_mean": 20.0,
+            "cpu_physical_mean": 20.0,
+            "mem_total_mean": 31.46,
+            "mem_avail_mean": 15.95,
+            "libs": {
+              "pandas": {
+                "mean": 1.5480781666653154,
+                "median": 1.7880682999984856,
+                "n": 3
+              },
+              "polars": {
+                "mean": 0.864938108333566,
+                "median": 0.8403739749992383,
+                "n": 3
+              },
+              "duckdb": {
+                "mean": 3.434691491667157,
+                "median": 3.3532414000001154,
+                "n": 3
+              }
+            },
+            "overall_mean": 1.9492359222220128,
+            "overall_median": 1.9335714166651694
+          },
+          "relative": {
+            "overall_mean_pct": 4.2822458996248605,
+            "libs_pct": {
+              "pandas": 41.55988801679917,
+              "polars": -0.7547537355322999,
+              "duckdb": -32.008783765494954,
+              "fireducks": null
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,742 @@
+{
+  "host_a": "ZBookFuryG8",
+  "host_b": "ZBookFuryG9",
+  "tie_threshold_pct": 5.0,
+  "overall": {
+    "summary_a": {
+      "rows": 24,
+      "cpu_brand": "11th Gen Intel(R) Core(TM) i9-11900H @ 2.50GHz",
+      "cpu_logical_mean": 16.0,
+      "cpu_physical_mean": 8.0,
+      "mem_total_mean": 52.44,
+      "mem_avail_mean": 42.67,
+      "libs": {
+        "pandas": {
+          "mean": 1.4380216831664718,
+          "median": 0.8747650313750057,
+          "n": 24
+        },
+        "polars": {
+          "mean": 0.9539013351563513,
+          "median": 0.951678416374989,
+          "n": 24
+        },
+        "duckdb": {
+          "mean": 3.6231743858750804,
+          "median": 3.699152374998448,
+          "n": 24
+        },
+        "fireducks": {
+          "mean": 0.45573060571875956,
+          "median": 0.11266527612499999,
+          "n": 16
+        }
+      },
+      "overall_mean": 1.791508844537324,
+      "overall_median": 1.4403902045625117
+    },
+    "summary_b": {
+      "rows": 24,
+      "cpu_brand": "12th Gen Intel(R) Core(TM) i7-12850HX",
+      "cpu_logical_mean": 24.0,
+      "cpu_physical_mean": 14.666666666666666,
+      "mem_total_mean": 52.38666666666666,
+      "mem_avail_mean": 44.32458333333334,
+      "libs": {
+        "pandas": {
+          "mean": 1.0700523480596196,
+          "median": 0.8740523217500069,
+          "n": 24
+        },
+        "polars": {
+          "mean": 0.8514932577532287,
+          "median": 0.8307593374629505,
+          "n": 24
+        },
+        "duckdb": {
+          "mean": 3.2728067663836105,
+          "median": 3.285744081250016,
+          "n": 24
+        },
+        "fireducks": {
+          "mean": 0.2488761808750075,
+          "median": 0.10944759137500881,
+          "n": 16
+        }
+      },
+      "overall_mean": 1.5062550791818068,
+      "overall_median": 1.3434179134062525
+    },
+    "relative": {
+      "overall_mean_pct": 15.922542957312999,
+      "libs_pct": {
+        "pandas": 25.588580437577065,
+        "polars": 10.735709619940643,
+        "duckdb": 9.670183716725745,
+        "fireducks": 45.3896276107043
+      }
+    }
+  },
+  "by_os": [
+    {
+      "os": "Linux",
+      "summary_a": {
+        "rows": 8,
+        "cpu_brand": "11th Gen Intel(R) Core(TM) i9-11900H @ 2.50GHz",
+        "cpu_logical_mean": 16.0,
+        "cpu_physical_mean": 8.0,
+        "mem_total_mean": 62.47,
+        "mem_avail_mean": 54.0825,
+        "libs": {
+          "pandas": {
+            "mean": 0.6718662124687533,
+            "median": 0.6914243187500091,
+            "n": 8
+          },
+          "polars": {
+            "mean": 0.8216627704999944,
+            "median": 0.7804109593749899,
+            "n": 8
+          },
+          "duckdb": {
+            "mean": 2.8681494190312478,
+            "median": 2.879374114875006,
+            "n": 8
+          },
+          "fireducks": {
+            "mean": 0.21017908434375343,
+            "median": 0.08440600162499834,
+            "n": 8
+          }
+        },
+        "overall_mean": 1.1429643715859372,
+        "overall_median": 1.157674664062494
+      },
+      "summary_b": {
+        "rows": 8,
+        "cpu_brand": "12th Gen Intel(R) Core(TM) i7-12850HX",
+        "cpu_logical_mean": 24.0,
+        "cpu_physical_mean": 16.0,
+        "mem_total_mean": 62.4,
+        "mem_avail_mean": 53.665,
+        "libs": {
+          "pandas": {
+            "mean": 0.7535509524062576,
+            "median": 0.7874208630000084,
+            "n": 8
+          },
+          "polars": {
+            "mean": 0.8239865157499935,
+            "median": 0.8048106899999965,
+            "n": 8
+          },
+          "duckdb": {
+            "mean": 2.721966546343756,
+            "median": 2.744980323500002,
+            "n": 8
+          },
+          "fireducks": {
+            "mean": 0.21948028128125863,
+            "median": 0.0807752318749948,
+            "n": 8
+          }
+        },
+        "overall_mean": 1.1297460739453165,
+        "overall_median": 1.1370624072187603
+      },
+      "relative": {
+        "overall_mean_pct": 1.1564925354829323,
+        "libs_pct": {
+          "pandas": -12.157887749311874,
+          "polars": -0.2828100935600485,
+          "duckdb": 5.096766288308182,
+          "fireducks": -4.4253675224376
+        }
+      },
+      "by_format": [
+        {
+          "format": "csv",
+          "summary_a": {
+            "rows": 5,
+            "cpu_brand": "11th Gen Intel(R) Core(TM) i9-11900H @ 2.50GHz",
+            "cpu_logical_mean": 16.0,
+            "cpu_physical_mean": 8.0,
+            "mem_total_mean": 62.47,
+            "mem_avail_mean": 54.516,
+            "libs": {
+              "pandas": {
+                "mean": 0.6799825374500017,
+                "median": 0.7014365607499826,
+                "n": 5
+              },
+              "polars": {
+                "mean": 0.8194593618999988,
+                "median": 0.7823634135000077,
+                "n": 5
+              },
+              "duckdb": {
+                "mean": 2.991203230499997,
+                "median": 3.069216730249991,
+                "n": 5
+              },
+              "fireducks": {
+                "mean": 0.18573763725000275,
+                "median": 0.08480991175002828,
+                "n": 5
+              }
+            },
+            "overall_mean": 1.169095691775,
+            "overall_median": 1.160864829062497
+          },
+          "summary_b": {
+            "rows": 5,
+            "cpu_brand": "12th Gen Intel(R) Core(TM) i7-12850HX",
+            "cpu_logical_mean": 24.0,
+            "cpu_physical_mean": 16.0,
+            "mem_total_mean": 62.4,
+            "mem_avail_mean": 54.256,
+            "libs": {
+              "pandas": {
+                "mean": 0.7596230526000113,
+                "median": 0.7790548840000042,
+                "n": 5
+              },
+              "polars": {
+                "mean": 0.8241923475499903,
+                "median": 0.808376571249994,
+                "n": 5
+              },
+              "duckdb": {
+                "mean": 2.8233785509000113,
+                "median": 2.8804588527500243,
+                "n": 5
+              },
+              "fireducks": {
+                "mean": 0.19153853070000365,
+                "median": 0.08083192875000123,
+                "n": 5
+              }
+            },
+            "overall_mean": 1.1496831204375042,
+            "overall_median": 1.1385056830000053
+          },
+          "relative": {
+            "overall_mean_pct": 1.6604775361050446,
+            "libs_pct": {
+              "pandas": -11.712141233607113,
+              "polars": -0.5775741751265823,
+              "duckdb": 5.610607727644528,
+              "fireducks": -3.1231653077361483
+            }
+          }
+        },
+        {
+          "format": "parquet",
+          "summary_a": {
+            "rows": 3,
+            "cpu_brand": "11th Gen Intel(R) Core(TM) i9-11900H @ 2.50GHz",
+            "cpu_logical_mean": 16.0,
+            "cpu_physical_mean": 8.0,
+            "mem_total_mean": 62.47,
+            "mem_avail_mean": 53.36,
+            "libs": {
+              "pandas": {
+                "mean": 0.6583390041666727,
+                "median": 0.6892472555000211,
+                "n": 3
+              },
+              "polars": {
+                "mean": 0.8253351181666536,
+                "median": 0.7655176254999958,
+                "n": 3
+              },
+              "duckdb": {
+                "mean": 2.6630597332499995,
+                "median": 2.653355150750002,
+                "n": 3
+              },
+              "fireducks": {
+                "mean": 0.25091482950000454,
+                "median": 0.07936484999999038,
+                "n": 3
+              }
+            },
+            "overall_mean": 1.0994121712708325,
+            "overall_median": 1.0597991350625122
+          },
+          "summary_b": {
+            "rows": 3,
+            "cpu_brand": "12th Gen Intel(R) Core(TM) i7-12850HX",
+            "cpu_logical_mean": 24.0,
+            "cpu_physical_mean": 16.0,
+            "mem_total_mean": 62.4,
+            "mem_avail_mean": 52.68,
+            "libs": {
+              "pandas": {
+                "mean": 0.7434307854166681,
+                "median": 0.7957868420000125,
+                "n": 3
+              },
+              "polars": {
+                "mean": 0.8236434627499989,
+                "median": 0.7813144850000242,
+                "n": 3
+              },
+              "duckdb": {
+                "mean": 2.5529465387499974,
+                "median": 2.528376109000021,
+                "n": 3
+              },
+              "fireducks": {
+                "mean": 0.26604986558335025,
+                "median": 0.08071853499998838,
+                "n": 3
+              }
+            },
+            "overall_mean": 1.0965176631250035,
+            "overall_median": 1.0457481606250312
+          },
+          "relative": {
+            "overall_mean_pct": 0.2632777971234485,
+            "libs_pct": {
+              "pandas": -12.925222523873517,
+              "polars": 0.2049658834840882,
+              "duckdb": 4.134837575183483,
+              "fireducks": -6.031941640717347
+            }
+          }
+        }
+      ]
+    },
+    {
+      "os": "WSL2",
+      "summary_a": {
+        "rows": 8,
+        "cpu_brand": "11th Gen Intel(R) Core(TM) i9-11900H @ 2.50GHz",
+        "cpu_logical_mean": 16.0,
+        "cpu_physical_mean": 8.0,
+        "mem_total_mean": 31.18,
+        "mem_avail_mean": 28.9775,
+        "libs": {
+          "pandas": {
+            "mean": 1.23755458078125,
+            "median": 0.8747650313750057,
+            "n": 8
+          },
+          "polars": {
+            "mean": 0.9503980474687452,
+            "median": 0.8919581636249916,
+            "n": 8
+          },
+          "duckdb": {
+            "mean": 3.8716030510937536,
+            "median": 3.95639990037499,
+            "n": 8
+          },
+          "fireducks": {
+            "mean": 0.7012821270937657,
+            "median": 0.11692094525002972,
+            "n": 8
+          }
+        },
+        "overall_mean": 1.6902094516093786,
+        "overall_median": 1.4403902045625117
+      },
+      "summary_b": {
+        "rows": 8,
+        "cpu_brand": "12th Gen Intel(R) Core(TM) i7-12850HX",
+        "cpu_logical_mean": 24.0,
+        "cpu_physical_mean": 12.0,
+        "mem_total_mean": 31.15,
+        "mem_avail_mean": 28.89,
+        "libs": {
+          "pandas": {
+            "mean": 0.8583349355624978,
+            "median": 0.8740523217500069,
+            "n": 8
+          },
+          "polars": {
+            "mean": 0.8640405325312486,
+            "median": 0.842258502875012,
+            "n": 8
+          },
+          "duckdb": {
+            "mean": 3.578423218468753,
+            "median": 3.566195559499988,
+            "n": 8
+          },
+          "fireducks": {
+            "mean": 0.2782720804687564,
+            "median": 0.11717355887503089,
+            "n": 8
+          }
+        },
+        "overall_mean": 1.394767691757814,
+        "overall_median": 1.3434179134062525
+      },
+      "relative": {
+        "overall_mean_pct": 17.47959458931269,
+        "libs_pct": {
+          "pandas": 30.642660219426958,
+          "polars": 9.086457528768925,
+          "duckdb": 7.572569521097343,
+          "fireducks": 60.31952480780254
+        }
+      },
+      "by_format": [
+        {
+          "format": "csv",
+          "summary_a": {
+            "rows": 5,
+            "cpu_brand": "11th Gen Intel(R) Core(TM) i9-11900H @ 2.50GHz",
+            "cpu_logical_mean": 16.0,
+            "cpu_physical_mean": 8.0,
+            "mem_total_mean": 31.18,
+            "mem_avail_mean": 29.534,
+            "libs": {
+              "pandas": {
+                "mean": 1.154332384899999,
+                "median": 0.8164647049999871,
+                "n": 5
+              },
+              "polars": {
+                "mean": 0.95047057795,
+                "median": 0.9109719015000053,
+                "n": 5
+              },
+              "duckdb": {
+                "mean": 3.992051479549997,
+                "median": 3.986613288749993,
+                "n": 5
+              },
+              "fireducks": {
+                "mean": 0.6164141517000246,
+                "median": 0.11708587125002623,
+                "n": 5
+              }
+            },
+            "overall_mean": 1.678317148525005,
+            "overall_median": 1.443792447187512
+          },
+          "summary_b": {
+            "rows": 5,
+            "cpu_brand": "12th Gen Intel(R) Core(TM) i7-12850HX",
+            "cpu_logical_mean": 24.0,
+            "cpu_physical_mean": 12.0,
+            "mem_total_mean": 31.15,
+            "mem_avail_mean": 29.266000000000002,
+            "libs": {
+              "pandas": {
+                "mean": 0.8488680888499942,
+                "median": 0.8732251555000232,
+                "n": 5
+              },
+              "polars": {
+                "mean": 0.8477728691000038,
+                "median": 0.8261186189999989,
+                "n": 5
+              },
+              "duckdb": {
+                "mean": 3.627715942900005,
+                "median": 3.5707848982499826,
+                "n": 5
+              },
+              "fireducks": {
+                "mean": 0.2388560659500115,
+                "median": 0.11044877475002579,
+                "n": 5
+              }
+            },
+            "overall_mean": 1.3908032417000036,
+            "overall_median": 1.3427568012499975
+          },
+          "relative": {
+            "overall_mean_pct": 17.131083185182494,
+            "libs_pct": {
+              "pandas": 26.462421053574392,
+              "polars": 10.804932970307961,
+              "duckdb": 9.126524006926426,
+              "fireducks": 61.250716698949205
+            }
+          }
+        },
+        {
+          "format": "parquet",
+          "summary_a": {
+            "rows": 3,
+            "cpu_brand": "11th Gen Intel(R) Core(TM) i9-11900H @ 2.50GHz",
+            "cpu_logical_mean": 16.0,
+            "cpu_physical_mean": 8.0,
+            "mem_total_mean": 31.18,
+            "mem_avail_mean": 28.05,
+            "libs": {
+              "pandas": {
+                "mean": 1.3762582405833352,
+                "median": 0.9060084797499997,
+                "n": 3
+              },
+              "polars": {
+                "mean": 0.9502771633333206,
+                "median": 0.8691615504999959,
+                "n": 3
+              },
+              "duckdb": {
+                "mean": 3.670855670333348,
+                "median": 3.529482712999993,
+                "n": 3
+              },
+              "fireducks": {
+                "mean": 0.8427287527500008,
+                "median": 0.11665982975000588,
+                "n": 3
+              }
+            },
+            "overall_mean": 1.7100299567500012,
+            "overall_median": 1.3380696631249975
+          },
+          "summary_b": {
+            "rows": 3,
+            "cpu_brand": "12th Gen Intel(R) Core(TM) i7-12850HX",
+            "cpu_logical_mean": 24.0,
+            "cpu_physical_mean": 12.0,
+            "mem_total_mean": 31.15,
+            "mem_avail_mean": 28.263333333333335,
+            "libs": {
+              "pandas": {
+                "mean": 0.8741130134166705,
+                "median": 0.895675926999985,
+                "n": 3
+              },
+              "polars": {
+                "mean": 0.8911533049166565,
+                "median": 0.8778040889999659,
+                "n": 3
+              },
+              "duckdb": {
+                "mean": 3.4962686777500003,
+                "median": 3.4396654855000293,
+                "n": 3
+              },
+              "fireducks": {
+                "mean": 0.3439654379999979,
+                "median": 0.1311074037499793,
+                "n": 3
+              }
+            },
+            "overall_mean": 1.4013751085208312,
+            "overall_median": 1.3444099247499963
+          },
+          "relative": {
+            "overall_mean_pct": 18.0496749200689,
+            "libs_pct": {
+              "pandas": 36.4862648854206,
+              "polars": 6.221748843176793,
+              "duckdb": 4.756029881378952,
+              "fireducks": 59.18432391471556
+            }
+          }
+        }
+      ]
+    },
+    {
+      "os": "Windows",
+      "summary_a": {
+        "rows": 8,
+        "cpu_brand": "11th Gen Intel(R) Core(TM) i9-11900H @ 2.50GHz",
+        "cpu_logical_mean": 16.0,
+        "cpu_physical_mean": 8.0,
+        "mem_total_mean": 63.67,
+        "mem_avail_mean": 44.95,
+        "libs": {
+          "pandas": {
+            "mean": 2.404644256249412,
+            "median": 2.2838976874991204,
+            "n": 8
+          },
+          "polars": {
+            "mean": 1.0896431875003145,
+            "median": 1.0605827250001312,
+            "n": 8
+          },
+          "duckdb": {
+            "mean": 4.1297706875002405,
+            "median": 4.182126450003125,
+            "n": 8
+          }
+        },
+        "overall_mean": 2.5413527104166556,
+        "overall_median": 2.4923009624999395
+      },
+      "summary_b": {
+        "rows": 8,
+        "cpu_brand": "12th Gen Intel(R) Core(TM) i7-12850HX",
+        "cpu_logical_mean": 24.0,
+        "cpu_physical_mean": 16.0,
+        "mem_total_mean": 63.61,
+        "mem_avail_mean": 50.41875,
+        "libs": {
+          "pandas": {
+            "mean": 1.598271156210103,
+            "median": 1.7811326750088483,
+            "n": 8
+          },
+          "polars": {
+            "mean": 0.8664527249784442,
+            "median": 0.837914087518584,
+            "n": 8
+          },
+          "duckdb": {
+            "mean": 3.5180305343383225,
+            "median": 3.5196314625791274,
+            "n": 8
+          }
+        },
+        "overall_mean": 1.99425147184229,
+        "overall_median": 2.0248158291409104
+      },
+      "relative": {
+        "overall_mean_pct": 21.527953846464243,
+        "libs_pct": {
+          "pandas": 33.53398732239216,
+          "polars": 20.482894316430162,
+          "duckdb": 14.812932713516005,
+          "fireducks": null
+        }
+      },
+      "by_format": [
+        {
+          "format": "csv",
+          "summary_a": {
+            "rows": 5,
+            "cpu_brand": "11th Gen Intel(R) Core(TM) i9-11900H @ 2.50GHz",
+            "cpu_logical_mean": 16.0,
+            "cpu_physical_mean": 8.0,
+            "mem_total_mean": 63.67,
+            "mem_avail_mean": 46.094,
+            "libs": {
+              "pandas": {
+                "mean": 2.3490216999998665,
+                "median": 2.2844456999991962,
+                "n": 5
+              },
+              "polars": {
+                "mean": 1.062420404999284,
+                "median": 1.0513919499971962,
+                "n": 5
+              },
+              "duckdb": {
+                "mean": 4.306090384999697,
+                "median": 4.283079099997849,
+                "n": 5
+              }
+            },
+            "overall_mean": 2.572510829999616,
+            "overall_median": 2.527433283332357
+          },
+          "summary_b": {
+            "rows": 5,
+            "cpu_brand": "12th Gen Intel(R) Core(TM) i7-12850HX",
+            "cpu_logical_mean": 24.0,
+            "cpu_physical_mean": 16.0,
+            "mem_total_mean": 63.61,
+            "mem_avail_mean": 51.818,
+            "libs": {
+              "pandas": {
+                "mean": 1.6534001999767498,
+                "median": 1.7962906500324607,
+                "n": 5
+              },
+              "polars": {
+                "mean": 0.872336549963802,
+                "median": 0.8414222500286996,
+                "n": 5
+              },
+              "duckdb": {
+                "mean": 3.747635969961993,
+                "median": 3.698445874848403,
+                "n": 5
+              }
+            },
+            "overall_mean": 2.091124239967515,
+            "overall_median": 2.0878388499841094
+          },
+          "relative": {
+            "overall_mean_pct": 18.71271383655061,
+            "libs_pct": {
+              "pandas": 29.61324282458337,
+              "polars": 17.891585491113574,
+              "duckdb": 12.968943173675237,
+              "fireducks": null
+            }
+          }
+        },
+        {
+          "format": "parquet",
+          "summary_a": {
+            "rows": 3,
+            "cpu_brand": "11th Gen Intel(R) Core(TM) i9-11900H @ 2.50GHz",
+            "cpu_logical_mean": 16.0,
+            "cpu_physical_mean": 8.0,
+            "mem_total_mean": 63.67,
+            "mem_avail_mean": 43.04333333333334,
+            "libs": {
+              "pandas": {
+                "mean": 2.4973485166653213,
+                "median": 2.2833496749990445,
+                "n": 3
+              },
+              "polars": {
+                "mean": 1.1350144916686986,
+                "median": 1.0697735000030661,
+                "n": 3
+              },
+              "duckdb": {
+                "mean": 3.8359045250011454,
+                "median": 3.7601788500032853,
+                "n": 3
+              }
+            },
+            "overall_mean": 2.4894225111117216,
+            "overall_median": 2.3711006750017987
+          },
+          "summary_b": {
+            "rows": 3,
+            "cpu_brand": "12th Gen Intel(R) Core(TM) i7-12850HX",
+            "cpu_logical_mean": 24.0,
+            "cpu_physical_mean": 16.0,
+            "mem_total_mean": 63.61,
+            "mem_avail_mean": 48.086666666666666,
+            "libs": {
+              "pandas": {
+                "mean": 1.5063894165990253,
+                "median": 1.7198300998425111,
+                "n": 3
+              },
+              "polars": {
+                "mean": 0.8566463500028476,
+                "median": 0.8122005250770599,
+                "n": 3
+              },
+              "duckdb": {
+                "mean": 3.135354808298871,
+                "median": 3.1487889249110594,
+                "n": 3
+              }
+            },
+            "overall_mean": 1.8327968583002479,
+            "overall_median": 1.8386748331831768
+          },
+          "relative": {
+            "overall_mean_pct": 26.37662549770385,
+            "libs_pct": {
+              "pandas": 39.68044882215765,
+              "polars": 24.525514318023735,
+              "duckdb": 18.26296019977362,
+              "fireducks": null
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

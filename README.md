@@ -105,6 +105,95 @@ Supported input formats (auto‑detected): CSV (.csv, .csv.gz, .csv.zip, .csv.zs
 
 Stored output now also includes dataset file metadata columns: `dataset_name` (filename) and `dataset_format` (csv, parquet, json, ndjson). This lets you directly compare performance across storage formats.
 
+### 🧭 Compare Two Hosts (PC vs PC)
+
+Use the host-to-host comparison CLI to compare two exact hostnames present in your benchmark results CSV. It prints overall, per-OS (Windows/WSL2/Linux), and per-format (CSV/Parquet) verdicts and can export a structured report.
+
+PowerShell (Windows):
+
+```powershell
+# JSON export (single JSON document)
+.\.venv\Scripts\python scripts\tools\compare_hosts.py `
+   --csv data\benchmark_results.csv `
+   --host ZBookFuryG8 `
+   --host ZBookFuryG9 `
+   --tie-threshold-pct 5 `
+   --formats csv parquet `
+   --libs pandas,polars,duckdb,fireducks `
+   # --json-out is optional; defaults to data\results\compare_<A>_vs_<B>.json
+   --json-out data\results\compare_ZBookFuryG8_vs_ZBookFuryG9.json
+
+# NDJSON export (one record per line; streaming/append friendly)
+.\.venv\Scripts\python scripts\tools\compare_hosts.py `
+   --csv data\benchmark_results.csv `
+   --host ZBookFuryG8 `
+   --host ZBookFuryG9 `
+   --tie-threshold-pct 5 `
+   --formats csv parquet `
+   --libs pandas,polars,duckdb,fireducks `
+   # When --ndjson is set, default filename uses .ndjson if --json-out omitted
+   --json-out data\results\compare_ZBookFuryG8_vs_ZBookFuryG9.ndjson `
+   --ndjson
+
+# Custom output directory
+.\.venv\Scripts\python scripts\tools\compare_hosts.py `
+   --csv data\benchmark_results.csv `
+   --host ZBookFuryG9 `
+   --host IdeaPadPro5i `
+   --formats csv parquet `
+   --libs pandas,polars,duckdb,fireducks `
+   --out-dir data\custom_results
+
+# No export (console only)
+.\.venv\Scripts\python scripts\tools\compare_hosts.py `
+   --csv data\benchmark_results.csv `
+   --host ZBookFuryG9 `
+   --host IdeaPadPro5i `
+   --formats csv parquet `
+   --libs pandas,polars,duckdb,fireducks `
+   --no-export
+
+# Quiet Mode: print only Summary + Verdict
+.\.venv\Scripts\python scripts\tools\compare_hosts.py `
+   --csv data\benchmark_results.csv `
+   --host ZBookFuryG8 `
+   --host ZBookFuryG9 `
+   --tie-threshold-pct 5 `
+   --formats csv parquet `
+   --libs pandas,polars,duckdb,fireducks `
+   --quiet
+```
+
+Notes:
+- Exact hostnames only; if a name is wrong, the tool errors with suggestions.
+- Positive percentage deltas mean the second host (`--host` B) is faster.
+- Use `--libs`/`--formats` to scope analysis; omit to auto-include available ones.
+- `--json-out` is optional; defaults to `data/results/compare_<hostA>_vs_<hostB>.json` (or `.ndjson` when `--ndjson`).
+- Reports start with a one-line headline winner and a Summary block; use `--quiet` for a concise view.
+- `--out-dir` sets the directory used for inferred filenames when `--json-out` is omitted.
+- `--no-export` skips writing JSON/NDJSON and prints to console only.
+
+Load the report in Python:
+
+```python
+# JSON (single object)
+import pandas as pd
+json_obj = pd.read_json('data/results/compare_ZBookFuryG8_vs_ZBookFuryG9.json', typ='series').to_dict()
+
+# NDJSON (one object per line into a DataFrame)
+import pandas as pd
+df = pd.read_json('data/results/compare_ZBookFuryG8_vs_ZBookFuryG9.ndjson', lines=True)
+
+# Polars examples
+import polars as pl
+json_series = pl.read_json('data/results/compare_ZBookFuryG8_vs_ZBookFuryG9.json')
+ndjson_df = pl.read_ndjson('data/results/compare_ZBookFuryG8_vs_ZBookFuryG9.ndjson')
+```
+
+JSON vs NDJSON:
+- JSON is a single document, easy for ad-hoc loading, emailing, or artifact storage.
+- NDJSON is line-delimited and better for streaming/append pipelines and ingest into systems like Elasticsearch, ClickHouse, or `jq`/shell processing.
+
 ### 🆘 First-Time Setup Help
 
 **New to Python development?** Here's what you need:

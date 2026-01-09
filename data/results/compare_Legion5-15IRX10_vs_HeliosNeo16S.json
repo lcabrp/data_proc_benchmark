@@ -1,0 +1,81 @@
+{
+  "host_a": "Legion5-15IRX10",
+  "host_b": "HeliosNeo16S",
+  "tie_threshold_pct": 5.0,
+  "overall": {
+    "summary_a": {
+      "rows": 32,
+      "cpu_brand": "Intel(R) Core(TM) i7-14700HX",
+      "cpu_logical_mean": 28.0,
+      "cpu_physical_mean": 18.5,
+      "mem_total_mean": 31.502499999999998,
+      "mem_avail_mean": 24.9065625,
+      "libs": {
+        "pandas": {
+          "mean": 1.1853724918046824,
+          "median": 1.124644406374962,
+          "n": 32
+        },
+        "polars": {
+          "mean": 0.8242810729531076,
+          "median": 0.8143560428749481,
+          "n": 32
+        },
+        "duckdb": {
+          "mean": 3.9151318694218693,
+          "median": 3.445788828624984,
+          "n": 32
+        },
+        "fireducks": {
+          "mean": 0.3776572435156176,
+          "median": 0.09994522049997556,
+          "n": 16
+        }
+      },
+      "overall_mean": 1.7694500208854083,
+      "overall_median": 1.6848166124999981
+    },
+    "summary_b": {
+      "rows": 64,
+      "cpu_brand": "Intel(R) Core(TM) Ultra 9 275HX",
+      "cpu_logical_mean": 24.0,
+      "cpu_physical_mean": 24.0,
+      "mem_total_mean": 23.30375,
+      "mem_avail_mean": 14.72046875,
+      "libs": {
+        "pandas": {
+          "mean": 1.4662245511132912,
+          "median": 1.074687978375053,
+          "n": 64
+        },
+        "polars": {
+          "mean": 0.8058170821640731,
+          "median": 0.7078214014999169,
+          "n": 64
+        },
+        "duckdb": {
+          "mean": 3.7513840454648286,
+          "median": 3.464355649125004,
+          "n": 64
+        },
+        "fireducks": {
+          "mean": 0.24124143366248826,
+          "median": 0.10818337112494802,
+          "n": 40
+        }
+      },
+      "overall_mean": 1.767966024880209,
+      "overall_median": 1.584202425812515
+    },
+    "relative": {
+      "overall_mean_pct": 0.08386764179169963,
+      "libs_pct": {
+        "pandas": -23.693148039990596,
+        "polars": 2.240011495458041,
+        "duckdb": 4.182434447124271,
+        "fireducks": 36.121592315622564
+      }
+    }
+  },
+  "by_os": []
+}
