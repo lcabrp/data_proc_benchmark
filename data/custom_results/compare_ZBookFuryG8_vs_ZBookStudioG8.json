@@ -1,0 +1,780 @@
+{
+  "host_a": "ZBookFuryG8",
+  "host_b": "ZBookStudioG8",
+  "tie_threshold_pct": 5.0,
+  "overall": {
+    "summary_a": {
+      "rows": 24,
+      "cpu_brand": "11th Gen Intel(R) Core(TM) i9-11900H @ 2.50GHz",
+      "cpu_logical_mean": 16.0,
+      "cpu_physical_mean": 8.0,
+      "mem_total_mean": 52.44,
+      "mem_avail_mean": 42.67,
+      "libs": {
+        "pandas": {
+          "mean": 1.4380216831664718,
+          "median": 0.8747650313750057,
+          "n": 24
+        },
+        "polars": {
+          "mean": 0.9539013351563513,
+          "median": 0.951678416374989,
+          "n": 24
+        },
+        "duckdb": {
+          "mean": 3.6231743858750804,
+          "median": 3.699152374998448,
+          "n": 24
+        },
+        "fireducks": {
+          "mean": 0.45573060571875956,
+          "median": 0.11266527612499999,
+          "n": 16
+        }
+      },
+      "overall_mean": 1.791508844537324,
+      "overall_median": 1.4403902045625117
+    },
+    "summary_b": {
+      "rows": 24,
+      "cpu_brand": "11th Gen Intel(R) Core(TM) i7-11850H @ 2.50GHz",
+      "cpu_logical_mean": 16.0,
+      "cpu_physical_mean": 8.0,
+      "mem_total_mean": 26.09,
+      "mem_avail_mean": 18.82,
+      "libs": {
+        "pandas": {
+          "mean": 1.2893996261562635,
+          "median": 1.1499502295000639,
+          "n": 24
+        },
+        "polars": {
+          "mean": 1.2530815348645852,
+          "median": 1.2342302146250148,
+          "n": 24
+        },
+        "duckdb": {
+          "mean": 4.573179209385413,
+          "median": 4.929024309749977,
+          "n": 24
+        },
+        "fireducks": {
+          "mean": 0.2517267220937436,
+          "median": 0.14655044925000027,
+          "n": 16
+        }
+      },
+      "overall_mean": 2.0626439030546897,
+      "overall_median": 2.0118934442187424
+    },
+    "relative": {
+      "overall_mean_pct": -15.134452690206462,
+      "libs_pct": {
+        "pandas": 10.335174966412742,
+        "polars": -31.363851656544334,
+        "duckdb": -26.220234588042995,
+        "fireducks": 44.764139398377566
+      }
+    }
+  },
+  "by_os": [
+    {
+      "os": "Linux",
+      "summary_a": {
+        "rows": 8,
+        "cpu_brand": "11th Gen Intel(R) Core(TM) i9-11900H @ 2.50GHz",
+        "cpu_logical_mean": 16.0,
+        "cpu_physical_mean": 8.0,
+        "mem_total_mean": 62.47,
+        "mem_avail_mean": 54.0825,
+        "libs": {
+          "pandas": {
+            "mean": 0.6718662124687533,
+            "median": 0.6914243187500091,
+            "n": 8
+          },
+          "polars": {
+            "mean": 0.8216627704999944,
+            "median": 0.7804109593749899,
+            "n": 8
+          },
+          "duckdb": {
+            "mean": 2.8681494190312478,
+            "median": 2.879374114875006,
+            "n": 8
+          },
+          "fireducks": {
+            "mean": 0.21017908434375343,
+            "median": 0.08440600162499834,
+            "n": 8
+          }
+        },
+        "overall_mean": 1.1429643715859372,
+        "overall_median": 1.157674664062494
+      },
+      "summary_b": {
+        "rows": 8,
+        "cpu_brand": "11th Gen Intel(R) Core(TM) i7-11850H @ 2.50GHz",
+        "cpu_logical_mean": 16.0,
+        "cpu_physical_mean": 8.0,
+        "mem_total_mean": 31.06,
+        "mem_avail_mean": 24.245,
+        "libs": {
+          "pandas": {
+            "mean": 0.7543223151875065,
+            "median": 0.7710023418750112,
+            "n": 8
+          },
+          "polars": {
+            "mean": 0.9427503185000088,
+            "median": 0.8938973178750089,
+            "n": 8
+          },
+          "duckdb": {
+            "mean": 3.3087176345312503,
+            "median": 3.2859273913749973,
+            "n": 8
+          },
+          "fireducks": {
+            "mean": 0.23179172181248298,
+            "median": 0.09098791874997403,
+            "n": 8
+          }
+        },
+        "overall_mean": 1.3093954975078121,
+        "overall_median": 1.3186970112499914
+      },
+      "relative": {
+        "overall_mean_pct": -14.561357296810657,
+        "libs_pct": {
+          "pandas": -12.272696734632708,
+          "polars": -14.736891136777535,
+          "duckdb": -15.360713517108525,
+          "fireducks": -10.28296299615689
+        }
+      },
+      "by_format": [
+        {
+          "format": "csv",
+          "summary_a": {
+            "rows": 5,
+            "cpu_brand": "11th Gen Intel(R) Core(TM) i9-11900H @ 2.50GHz",
+            "cpu_logical_mean": 16.0,
+            "cpu_physical_mean": 8.0,
+            "mem_total_mean": 62.47,
+            "mem_avail_mean": 54.516,
+            "libs": {
+              "pandas": {
+                "mean": 0.6799825374500017,
+                "median": 0.7014365607499826,
+                "n": 5
+              },
+              "polars": {
+                "mean": 0.8194593618999988,
+                "median": 0.7823634135000077,
+                "n": 5
+              },
+              "duckdb": {
+                "mean": 2.991203230499997,
+                "median": 3.069216730249991,
+                "n": 5
+              },
+              "fireducks": {
+                "mean": 0.18573763725000275,
+                "median": 0.08480991175002828,
+                "n": 5
+              }
+            },
+            "overall_mean": 1.169095691775,
+            "overall_median": 1.160864829062497
+          },
+          "summary_b": {
+            "rows": 5,
+            "cpu_brand": "11th Gen Intel(R) Core(TM) i7-11850H @ 2.50GHz",
+            "cpu_logical_mean": 16.0,
+            "cpu_physical_mean": 8.0,
+            "mem_total_mean": 31.06,
+            "mem_avail_mean": 24.756,
+            "libs": {
+              "pandas": {
+                "mean": 0.7605216015000081,
+                "median": 0.7726346214999893,
+                "n": 5
+              },
+              "polars": {
+                "mean": 0.939086344900008,
+                "median": 0.8952018837500049,
+                "n": 5
+              },
+              "duckdb": {
+                "mean": 3.466053872550012,
+                "median": 3.5537483330000157,
+                "n": 5
+              },
+              "fireducks": {
+                "mean": 0.20278482004999035,
+                "median": 0.09158628674998681,
+                "n": 5
+              }
+            },
+            "overall_mean": 1.3421116597500045,
+            "overall_median": 1.3284560816874915
+          },
+          "relative": {
+            "overall_mean_pct": -14.799128009129861,
+            "libs_pct": {
+              "pandas": -11.844284171184084,
+              "polars": -14.598281325707477,
+              "duckdb": -15.874904025516209,
+              "fireducks": -9.178098231669708
+            }
+          }
+        },
+        {
+          "format": "parquet",
+          "summary_a": {
+            "rows": 3,
+            "cpu_brand": "11th Gen Intel(R) Core(TM) i9-11900H @ 2.50GHz",
+            "cpu_logical_mean": 16.0,
+            "cpu_physical_mean": 8.0,
+            "mem_total_mean": 62.47,
+            "mem_avail_mean": 53.36,
+            "libs": {
+              "pandas": {
+                "mean": 0.6583390041666727,
+                "median": 0.6892472555000211,
+                "n": 3
+              },
+              "polars": {
+                "mean": 0.8253351181666536,
+                "median": 0.7655176254999958,
+                "n": 3
+              },
+              "duckdb": {
+                "mean": 2.6630597332499995,
+                "median": 2.653355150750002,
+                "n": 3
+              },
+              "fireducks": {
+                "mean": 0.25091482950000454,
+                "median": 0.07936484999999038,
+                "n": 3
+              }
+            },
+            "overall_mean": 1.0994121712708325,
+            "overall_median": 1.0597991350625122
+          },
+          "summary_b": {
+            "rows": 3,
+            "cpu_brand": "11th Gen Intel(R) Core(TM) i7-11850H @ 2.50GHz",
+            "cpu_logical_mean": 16.0,
+            "cpu_physical_mean": 8.0,
+            "mem_total_mean": 31.06,
+            "mem_avail_mean": 23.393333333333334,
+            "libs": {
+              "pandas": {
+                "mean": 0.743990171333337,
+                "median": 0.769370062250033,
+                "n": 3
+              },
+              "polars": {
+                "mean": 0.9488569411666768,
+                "median": 0.8800037630000475,
+                "n": 3
+              },
+              "duckdb": {
+                "mean": 3.046490571166648,
+                "median": 3.0400180397499525,
+                "n": 3
+              },
+              "fireducks": {
+                "mean": 0.280136558083304,
+                "median": 0.08943049099997324,
+                "n": 3
+              }
+            },
+            "overall_mean": 1.2548685604374914,
+            "overall_median": 1.1915826081874883
+          },
+          "relative": {
+            "overall_mean_pct": -14.13995526236205,
+            "libs_pct": {
+              "pandas": -13.010191804613157,
+              "polars": -14.966262828414074,
+              "duckdb": -14.398131334767678,
+              "fireducks": -11.64607474238542
+            }
+          }
+        }
+      ]
+    },
+    {
+      "os": "WSL2",
+      "summary_a": {
+        "rows": 8,
+        "cpu_brand": "11th Gen Intel(R) Core(TM) i9-11900H @ 2.50GHz",
+        "cpu_logical_mean": 16.0,
+        "cpu_physical_mean": 8.0,
+        "mem_total_mean": 31.18,
+        "mem_avail_mean": 28.9775,
+        "libs": {
+          "pandas": {
+            "mean": 1.23755458078125,
+            "median": 0.8747650313750057,
+            "n": 8
+          },
+          "polars": {
+            "mean": 0.9503980474687452,
+            "median": 0.8919581636249916,
+            "n": 8
+          },
+          "duckdb": {
+            "mean": 3.8716030510937536,
+            "median": 3.95639990037499,
+            "n": 8
+          },
+          "fireducks": {
+            "mean": 0.7012821270937657,
+            "median": 0.11692094525002972,
+            "n": 8
+          }
+        },
+        "overall_mean": 1.6902094516093786,
+        "overall_median": 1.4403902045625117
+      },
+      "summary_b": {
+        "rows": 8,
+        "cpu_brand": "11th Gen Intel(R) Core(TM) i7-11850H @ 2.50GHz",
+        "cpu_logical_mean": 16.0,
+        "cpu_physical_mean": 8.0,
+        "mem_total_mean": 15.49,
+        "mem_avail_mean": 12.6325,
+        "libs": {
+          "pandas": {
+            "mean": 1.1279084664062573,
+            "median": 1.1499502295000639,
+            "n": 8
+          },
+          "polars": {
+            "mean": 1.3107199798437286,
+            "median": 1.2342302146250148,
+            "n": 8
+          },
+          "duckdb": {
+            "mean": 5.198685553000008,
+            "median": 5.066574990125048,
+            "n": 8
+          },
+          "fireducks": {
+            "mean": 0.2716617223750042,
+            "median": 0.15937337199999035,
+            "n": 8
+          }
+        },
+        "overall_mean": 1.9772439304062495,
+        "overall_median": 2.0118934442187424
+      },
+      "relative": {
+        "overall_mean_pct": -16.98218398456849,
+        "libs_pct": {
+          "pandas": 8.85990129871886,
+          "polars": -37.912739123849356,
+          "duckdb": -34.27733898317248,
+          "fireducks": 61.262135183621844
+        }
+      },
+      "by_format": [
+        {
+          "format": "csv",
+          "summary_a": {
+            "rows": 5,
+            "cpu_brand": "11th Gen Intel(R) Core(TM) i9-11900H @ 2.50GHz",
+            "cpu_logical_mean": 16.0,
+            "cpu_physical_mean": 8.0,
+            "mem_total_mean": 31.18,
+            "mem_avail_mean": 29.534,
+            "libs": {
+              "pandas": {
+                "mean": 1.154332384899999,
+                "median": 0.8164647049999871,
+                "n": 5
+              },
+              "polars": {
+                "mean": 0.95047057795,
+                "median": 0.9109719015000053,
+                "n": 5
+              },
+              "duckdb": {
+                "mean": 3.992051479549997,
+                "median": 3.986613288749993,
+                "n": 5
+              },
+              "fireducks": {
+                "mean": 0.6164141517000246,
+                "median": 0.11708587125002623,
+                "n": 5
+              }
+            },
+            "overall_mean": 1.678317148525005,
+            "overall_median": 1.443792447187512
+          },
+          "summary_b": {
+            "rows": 5,
+            "cpu_brand": "11th Gen Intel(R) Core(TM) i7-11850H @ 2.50GHz",
+            "cpu_logical_mean": 16.0,
+            "cpu_physical_mean": 8.0,
+            "mem_total_mean": 15.49,
+            "mem_avail_mean": 12.894,
+            "libs": {
+              "pandas": {
+                "mean": 1.1390454644500039,
+                "median": 1.1581257367499802,
+                "n": 5
+              },
+              "polars": {
+                "mean": 1.3247500829499927,
+                "median": 1.253091596250016,
+                "n": 5
+              },
+              "duckdb": {
+                "mean": 5.342041237350003,
+                "median": 5.4449054692499885,
+                "n": 5
+              },
+              "fireducks": {
+                "mean": 0.23784895230001551,
+                "median": 0.15860181500002568,
+                "n": 5
+              }
+            },
+            "overall_mean": 2.010921434262504,
+            "overall_median": 2.016031407937483
+          },
+          "relative": {
+            "overall_mean_pct": -19.817725513310126,
+            "libs_pct": {
+              "pandas": 1.3243083751236302,
+              "polars": -39.3783367610651,
+              "duckdb": -33.81694260997313,
+              "fireducks": 61.4140993285041
+            }
+          }
+        },
+        {
+          "format": "parquet",
+          "summary_a": {
+            "rows": 3,
+            "cpu_brand": "11th Gen Intel(R) Core(TM) i9-11900H @ 2.50GHz",
+            "cpu_logical_mean": 16.0,
+            "cpu_physical_mean": 8.0,
+            "mem_total_mean": 31.18,
+            "mem_avail_mean": 28.05,
+            "libs": {
+              "pandas": {
+                "mean": 1.3762582405833352,
+                "median": 0.9060084797499997,
+                "n": 3
+              },
+              "polars": {
+                "mean": 0.9502771633333206,
+                "median": 0.8691615504999959,
+                "n": 3
+              },
+              "duckdb": {
+                "mean": 3.670855670333348,
+                "median": 3.529482712999993,
+                "n": 3
+              },
+              "fireducks": {
+                "mean": 0.8427287527500008,
+                "median": 0.11665982975000588,
+                "n": 3
+              }
+            },
+            "overall_mean": 1.7100299567500012,
+            "overall_median": 1.3380696631249975
+          },
+          "summary_b": {
+            "rows": 3,
+            "cpu_brand": "11th Gen Intel(R) Core(TM) i7-11850H @ 2.50GHz",
+            "cpu_logical_mean": 16.0,
+            "cpu_physical_mean": 8.0,
+            "mem_total_mean": 15.49,
+            "mem_avail_mean": 12.196666666666667,
+            "libs": {
+              "pandas": {
+                "mean": 1.1093468030000129,
+                "median": 1.1285655839999436,
+                "n": 3
+              },
+              "polars": {
+                "mean": 1.2873364746666216,
+                "median": 1.2099256642499654,
+                "n": 3
+              },
+              "duckdb": {
+                "mean": 4.959759412416683,
+                "median": 4.971233658250014,
+                "n": 3
+              },
+              "fireducks": {
+                "mean": 0.32801633916665196,
+                "median": 0.16014492899995503,
+                "n": 3
+              }
+            },
+            "overall_mean": 1.9211147573124923,
+            "overall_median": 1.8713908173125162
+          },
+          "relative": {
+            "overall_mean_pct": -12.343924135906272,
+            "libs_pct": {
+              "pandas": 19.393993780570597,
+              "polars": -35.469579227915595,
+              "duckdb": -35.11180656052028,
+              "fireducks": 61.07687816557038
+            }
+          }
+        }
+      ]
+    },
+    {
+      "os": "Windows",
+      "summary_a": {
+        "rows": 8,
+        "cpu_brand": "11th Gen Intel(R) Core(TM) i9-11900H @ 2.50GHz",
+        "cpu_logical_mean": 16.0,
+        "cpu_physical_mean": 8.0,
+        "mem_total_mean": 63.67,
+        "mem_avail_mean": 44.95,
+        "libs": {
+          "pandas": {
+            "mean": 2.404644256249412,
+            "median": 2.2838976874991204,
+            "n": 8
+          },
+          "polars": {
+            "mean": 1.0896431875003145,
+            "median": 1.0605827250001312,
+            "n": 8
+          },
+          "duckdb": {
+            "mean": 4.1297706875002405,
+            "median": 4.182126450003125,
+            "n": 8
+          }
+        },
+        "overall_mean": 2.5413527104166556,
+        "overall_median": 2.4923009624999395
+      },
+      "summary_b": {
+        "rows": 8,
+        "cpu_brand": "11th Gen Intel(R) Core(TM) i7-11850H @ 2.50GHz",
+        "cpu_logical_mean": 16.0,
+        "cpu_physical_mean": 8.0,
+        "mem_total_mean": 31.72,
+        "mem_avail_mean": 19.5825,
+        "libs": {
+          "pandas": {
+            "mean": 1.9859680968750268,
+            "median": 2.1692365250000307,
+            "n": 8
+          },
+          "polars": {
+            "mean": 1.505774306250018,
+            "median": 1.3709631124999646,
+            "n": 8
+          },
+          "duckdb": {
+            "mean": 5.212134440624979,
+            "median": 5.169208899999887,
+            "n": 8
+          }
+        },
+        "overall_mean": 2.901292281250008,
+        "overall_median": 2.8832319791666996
+      },
+      "relative": {
+        "overall_mean_pct": -14.163306390254668,
+        "libs_pct": {
+          "pandas": 17.41114754443577,
+          "polars": -38.18966828070802,
+          "duckdb": -26.208810004893895,
+          "fireducks": null
+        }
+      },
+      "by_format": [
+        {
+          "format": "csv",
+          "summary_a": {
+            "rows": 5,
+            "cpu_brand": "11th Gen Intel(R) Core(TM) i9-11900H @ 2.50GHz",
+            "cpu_logical_mean": 16.0,
+            "cpu_physical_mean": 8.0,
+            "mem_total_mean": 63.67,
+            "mem_avail_mean": 46.094,
+            "libs": {
+              "pandas": {
+                "mean": 2.3490216999998665,
+                "median": 2.2844456999991962,
+                "n": 5
+              },
+              "polars": {
+                "mean": 1.062420404999284,
+                "median": 1.0513919499971962,
+                "n": 5
+              },
+              "duckdb": {
+                "mean": 4.306090384999697,
+                "median": 4.283079099997849,
+                "n": 5
+              }
+            },
+            "overall_mean": 2.572510829999616,
+            "overall_median": 2.527433283332357
+          },
+          "summary_b": {
+            "rows": 5,
+            "cpu_brand": "11th Gen Intel(R) Core(TM) i7-11850H @ 2.50GHz",
+            "cpu_logical_mean": 16.0,
+            "cpu_physical_mean": 8.0,
+            "mem_total_mean": 31.72,
+            "mem_avail_mean": 20.482,
+            "libs": {
+              "pandas": {
+                "mean": 2.0534173700000338,
+                "median": 2.1615942500000074,
+                "n": 5
+              },
+              "polars": {
+                "mean": 1.5199058550000017,
+                "median": 1.3646162749998894,
+                "n": 5
+              },
+              "duckdb": {
+                "mean": 5.484406890000036,
+                "median": 5.331084950000104,
+                "n": 5
+              }
+            },
+            "overall_mean": 3.0192433716666907,
+            "overall_median": 2.9555200000000545
+          },
+          "relative": {
+            "overall_mean_pct": -17.365623361326776,
+            "libs_pct": {
+              "pandas": 12.584146412944996,
+              "polars": -43.06067991992549,
+              "duckdb": -27.36395197613628,
+              "fireducks": null
+            }
+          }
+        },
+        {
+          "format": "parquet",
+          "summary_a": {
+            "rows": 3,
+            "cpu_brand": "11th Gen Intel(R) Core(TM) i9-11900H @ 2.50GHz",
+            "cpu_logical_mean": 16.0,
+            "cpu_physical_mean": 8.0,
+            "mem_total_mean": 63.67,
+            "mem_avail_mean": 43.04333333333334,
+            "libs": {
+              "pandas": {
+                "mean": 2.4973485166653213,
+                "median": 2.2833496749990445,
+                "n": 3
+              },
+              "polars": {
+                "mean": 1.1350144916686986,
+                "median": 1.0697735000030661,
+                "n": 3
+              },
+              "duckdb": {
+                "mean": 3.8359045250011454,
+                "median": 3.7601788500032853,
+                "n": 3
+              }
+            },
+            "overall_mean": 2.4894225111117216,
+            "overall_median": 2.3711006750017987
+          },
+          "summary_b": {
+            "rows": 3,
+            "cpu_brand": "11th Gen Intel(R) Core(TM) i7-11850H @ 2.50GHz",
+            "cpu_logical_mean": 16.0,
+            "cpu_physical_mean": 8.0,
+            "mem_total_mean": 31.72,
+            "mem_avail_mean": 18.083333333333332,
+            "libs": {
+              "pandas": {
+                "mean": 1.873552641666682,
+                "median": 2.176878800000054,
+                "n": 3
+              },
+              "polars": {
+                "mean": 1.482221725000045,
+                "median": 1.3773099500000399,
+                "n": 3
+              },
+              "duckdb": {
+                "mean": 4.758347024999883,
+                "median": 4.8894670500000075,
+                "n": 3
+              }
+            },
+            "overall_mean": 2.7047071305555366,
+            "overall_median": 2.6674844666666027
+          },
+          "relative": {
+            "overall_mean_pct": -8.647974318657283,
+            "libs_pct": {
+              "pandas": 24.978326846890653,
+              "polars": -30.590555088057258,
+              "duckdb": -24.047587576452045,
+              "fireducks": null
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "meta": {
+    "version": 1,
+    "generated_at_utc": "2026-01-11T16:37:58.707056+00:00",
+    "generated_via": "compute",
+    "source_report": null,
+    "csv": {
+      "path": "data\\benchmark_results.csv",
+      "size_bytes": 563286,
+      "mtime_epoch": 1768149450.5814548
+    },
+    "args": {
+      "hosts": [
+        "ZBookFuryG8",
+        "ZBookStudioG8"
+      ],
+      "formats": [
+        "csv",
+        "parquet"
+      ],
+      "libs": [
+        "duckdb",
+        "fireducks",
+        "pandas",
+        "polars"
+      ],
+      "tie_threshold_pct": 5.0
+    },
+    "signature": {
+      "ZBookFuryG8": {
+        "rows": 24,
+        "max_timestamp": "2025-12-26T14:47:17.326269"
+      },
+      "ZBookStudioG8": {
+        "rows": 24,
+        "max_timestamp": "2026-01-11T16:35:53.704083"
+      }
+    }
+  }
+}

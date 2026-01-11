@@ -1,0 +1,550 @@
+{
+  "host_a": "ZBookStudioG8",
+  "host_b": "WL5040",
+  "tie_threshold_pct": 5.0,
+  "overall": {
+    "summary_a": {
+      "rows": 24,
+      "cpu_brand": "11th Gen Intel(R) Core(TM) i7-11850H @ 2.50GHz",
+      "cpu_logical_mean": 16.0,
+      "cpu_physical_mean": 8.0,
+      "mem_total_mean": 26.09,
+      "mem_avail_mean": 18.82,
+      "libs": {
+        "pandas": {
+          "mean": 1.2893996261562635,
+          "median": 1.1499502295000639,
+          "n": 24
+        },
+        "polars": {
+          "mean": 1.2530815348645852,
+          "median": 1.2342302146250148,
+          "n": 24
+        },
+        "duckdb": {
+          "mean": 4.573179209385413,
+          "median": 4.929024309749977,
+          "n": 24
+        },
+        "fireducks": {
+          "mean": 0.2517267220937436,
+          "median": 0.14655044925000027,
+          "n": 16
+        }
+      },
+      "overall_mean": 2.0626439030546897,
+      "overall_median": 2.0118934442187424
+    },
+    "summary_b": {
+      "rows": 31,
+      "cpu_brand": "AMD Ryzen 9 8945HS w/ Radeon 780M Graphics",
+      "cpu_logical_mean": 16.0,
+      "cpu_physical_mean": 8.0,
+      "mem_total_mean": 19.394193548387097,
+      "mem_avail_mean": 13.545483870967741,
+      "libs": {
+        "pandas": {
+          "mean": 1.7020163051487371,
+          "median": 1.2628105197499622,
+          "n": 31
+        },
+        "polars": {
+          "mean": 1.6302425725572698,
+          "median": 1.4785039887499352,
+          "n": 31
+        },
+        "duckdb": {
+          "mean": 7.783428092465017,
+          "median": 8.166304208000042,
+          "n": 31
+        },
+        "fireducks": {
+          "mean": 0.780068923804359,
+          "median": 0.27348480925007834,
+          "n": 23
+        }
+      },
+      "overall_mean": 3.131244147092631,
+      "overall_median": 3.0784384166666614
+    },
+    "relative": {
+      "overall_mean_pct": -51.80730626626288,
+      "libs_pct": {
+        "pandas": -32.00068238134174,
+        "polars": -30.09868290282026,
+        "duckdb": -70.19731211257361,
+        "fireducks": -209.8872131318103
+      }
+    }
+  },
+  "by_os": [
+    {
+      "os": "WSL2",
+      "summary_a": {
+        "rows": 8,
+        "cpu_brand": "11th Gen Intel(R) Core(TM) i7-11850H @ 2.50GHz",
+        "cpu_logical_mean": 16.0,
+        "cpu_physical_mean": 8.0,
+        "mem_total_mean": 15.49,
+        "mem_avail_mean": 12.6325,
+        "libs": {
+          "pandas": {
+            "mean": 1.1279084664062573,
+            "median": 1.1499502295000639,
+            "n": 8
+          },
+          "polars": {
+            "mean": 1.3107199798437286,
+            "median": 1.2342302146250148,
+            "n": 8
+          },
+          "duckdb": {
+            "mean": 5.198685553000008,
+            "median": 5.066574990125048,
+            "n": 8
+          },
+          "fireducks": {
+            "mean": 0.2716617223750042,
+            "median": 0.15937337199999035,
+            "n": 8
+          }
+        },
+        "overall_mean": 1.9772439304062495,
+        "overall_median": 2.0118934442187424
+      },
+      "summary_b": {
+        "rows": 23,
+        "cpu_brand": "AMD Ryzen 9 8945HS w/ Radeon 780M Graphics",
+        "cpu_logical_mean": 16.0,
+        "cpu_physical_mean": 8.0,
+        "mem_total_mean": 15.26,
+        "mem_avail_mean": 12.70695652173913,
+        "libs": {
+          "pandas": {
+            "mean": 1.3407108797608251,
+            "median": 1.1965710772499278,
+            "n": 23
+          },
+          "polars": {
+            "mean": 1.6943400923587038,
+            "median": 1.5400601385000527,
+            "n": 23
+          },
+          "duckdb": {
+            "mean": 8.588736737673901,
+            "median": 8.487731555749974,
+            "n": 23
+          },
+          "fireducks": {
+            "mean": 0.780068923804359,
+            "median": 0.27348480925007834,
+            "n": 23
+          }
+        },
+        "overall_mean": 3.1009641583994476,
+        "overall_median": 3.0153548355000055
+      },
+      "relative": {
+        "overall_mean_pct": -56.8326553295989,
+        "libs_pct": {
+          "pandas": -18.866993173000914,
+          "polars": -29.26789233507469,
+          "duckdb": -65.20977562717935,
+          "fireducks": -187.14716117699686
+        }
+      },
+      "by_format": [
+        {
+          "format": "csv",
+          "summary_a": {
+            "rows": 5,
+            "cpu_brand": "11th Gen Intel(R) Core(TM) i7-11850H @ 2.50GHz",
+            "cpu_logical_mean": 16.0,
+            "cpu_physical_mean": 8.0,
+            "mem_total_mean": 15.49,
+            "mem_avail_mean": 12.894,
+            "libs": {
+              "pandas": {
+                "mean": 1.1390454644500039,
+                "median": 1.1581257367499802,
+                "n": 5
+              },
+              "polars": {
+                "mean": 1.3247500829499927,
+                "median": 1.253091596250016,
+                "n": 5
+              },
+              "duckdb": {
+                "mean": 5.342041237350003,
+                "median": 5.4449054692499885,
+                "n": 5
+              },
+              "fireducks": {
+                "mean": 0.23784895230001551,
+                "median": 0.15860181500002568,
+                "n": 5
+              }
+            },
+            "overall_mean": 2.010921434262504,
+            "overall_median": 2.016031407937483
+          },
+          "summary_b": {
+            "rows": 17,
+            "cpu_brand": "AMD Ryzen 9 8945HS w/ Radeon 780M Graphics",
+            "cpu_logical_mean": 16.0,
+            "cpu_physical_mean": 8.0,
+            "mem_total_mean": 15.26,
+            "mem_avail_mean": 12.952352941176471,
+            "libs": {
+              "pandas": {
+                "mean": 1.3969223076764077,
+                "median": 1.201635113000009,
+                "n": 17
+              },
+              "polars": {
+                "mean": 1.7330426816911881,
+                "median": 1.8578473672500877,
+                "n": 17
+              },
+              "duckdb": {
+                "mean": 8.557653697441177,
+                "median": 8.442408325500082,
+                "n": 17
+              },
+              "fireducks": {
+                "mean": 0.8985155682058836,
+                "median": 0.7670566997500146,
+                "n": 17
+              }
+            },
+            "overall_mean": 3.146533563753664,
+            "overall_median": 3.1342721879374267
+          },
+          "relative": {
+            "overall_mean_pct": -56.47222761378744,
+            "libs_pct": {
+              "pandas": -22.63973223851266,
+              "polars": -30.82034898476831,
+              "duckdb": -60.19445221816231,
+              "fireducks": -277.7673012713224
+            }
+          }
+        },
+        {
+          "format": "parquet",
+          "summary_a": {
+            "rows": 3,
+            "cpu_brand": "11th Gen Intel(R) Core(TM) i7-11850H @ 2.50GHz",
+            "cpu_logical_mean": 16.0,
+            "cpu_physical_mean": 8.0,
+            "mem_total_mean": 15.49,
+            "mem_avail_mean": 12.196666666666667,
+            "libs": {
+              "pandas": {
+                "mean": 1.1093468030000129,
+                "median": 1.1285655839999436,
+                "n": 3
+              },
+              "polars": {
+                "mean": 1.2873364746666216,
+                "median": 1.2099256642499654,
+                "n": 3
+              },
+              "duckdb": {
+                "mean": 4.959759412416683,
+                "median": 4.971233658250014,
+                "n": 3
+              },
+              "fireducks": {
+                "mean": 0.32801633916665196,
+                "median": 0.16014492899995503,
+                "n": 3
+              }
+            },
+            "overall_mean": 1.9211147573124923,
+            "overall_median": 1.8713908173125162
+          },
+          "summary_b": {
+            "rows": 6,
+            "cpu_brand": "AMD Ryzen 9 8945HS w/ Radeon 780M Graphics",
+            "cpu_logical_mean": 16.0,
+            "cpu_physical_mean": 8.0,
+            "mem_total_mean": 15.26,
+            "mem_avail_mean": 12.011666666666667,
+            "libs": {
+              "pandas": {
+                "mean": 1.1814451673333413,
+                "median": 1.177401322250006,
+                "n": 6
+              },
+              "polars": {
+                "mean": 1.5846827559166645,
+                "median": 1.3744266150000328,
+                "n": 6
+              },
+              "duckdb": {
+                "mean": 8.676805351666625,
+                "median": 9.070659041749934,
+                "n": 6
+              },
+              "fireducks": {
+                "mean": 0.4444700980000391,
+                "median": 0.25706174012509564,
+                "n": 6
+              }
+            },
+            "overall_mean": 2.9718508432291677,
+            "overall_median": 2.9945563816562384
+          },
+          "relative": {
+            "overall_mean_pct": -54.69408227265836,
+            "libs_pct": {
+              "pandas": -6.499172678764871,
+              "polars": -23.097790445737658,
+              "duckdb": -74.9440775281231,
+              "fireducks": -35.5024262295122
+            }
+          }
+        }
+      ]
+    },
+    {
+      "os": "Windows",
+      "summary_a": {
+        "rows": 8,
+        "cpu_brand": "11th Gen Intel(R) Core(TM) i7-11850H @ 2.50GHz",
+        "cpu_logical_mean": 16.0,
+        "cpu_physical_mean": 8.0,
+        "mem_total_mean": 31.72,
+        "mem_avail_mean": 19.5825,
+        "libs": {
+          "pandas": {
+            "mean": 1.9859680968750268,
+            "median": 2.1692365250000307,
+            "n": 8
+          },
+          "polars": {
+            "mean": 1.505774306250018,
+            "median": 1.3709631124999646,
+            "n": 8
+          },
+          "duckdb": {
+            "mean": 5.212134440624979,
+            "median": 5.169208899999887,
+            "n": 8
+          }
+        },
+        "overall_mean": 2.901292281250008,
+        "overall_median": 2.8832319791666996
+      },
+      "summary_b": {
+        "rows": 8,
+        "cpu_brand": "AMD Ryzen 9 8945HS w/ Radeon 780M Graphics",
+        "cpu_logical_mean": 16.0,
+        "cpu_physical_mean": 8.0,
+        "mem_total_mean": 31.28,
+        "mem_avail_mean": 15.95625,
+        "libs": {
+          "pandas": {
+            "mean": 2.7407694031389838,
+            "median": 3.043863062513992,
+            "n": 8
+          },
+          "polars": {
+            "mean": 1.445962203128147,
+            "median": 1.345030049997149,
+            "n": 8
+          },
+          "duckdb": {
+            "mean": 5.468165737489471,
+            "median": 5.409780487490934,
+            "n": 8
+          }
+        },
+        "overall_mean": 3.218299114585534,
+        "overall_median": 3.3250047958475384
+      },
+      "relative": {
+        "overall_mean_pct": -10.926401155244696,
+        "libs_pct": {
+          "pandas": -38.006718610014765,
+          "polars": 3.972182476059586,
+          "duckdb": -4.912215902738532,
+          "fireducks": null
+        }
+      },
+      "by_format": [
+        {
+          "format": "csv",
+          "summary_a": {
+            "rows": 5,
+            "cpu_brand": "11th Gen Intel(R) Core(TM) i7-11850H @ 2.50GHz",
+            "cpu_logical_mean": 16.0,
+            "cpu_physical_mean": 8.0,
+            "mem_total_mean": 31.72,
+            "mem_avail_mean": 20.482,
+            "libs": {
+              "pandas": {
+                "mean": 2.0534173700000338,
+                "median": 2.1615942500000074,
+                "n": 5
+              },
+              "polars": {
+                "mean": 1.5199058550000017,
+                "median": 1.3646162749998894,
+                "n": 5
+              },
+              "duckdb": {
+                "mean": 5.484406890000036,
+                "median": 5.331084950000104,
+                "n": 5
+              }
+            },
+            "overall_mean": 3.0192433716666907,
+            "overall_median": 2.9555200000000545
+          },
+          "summary_b": {
+            "rows": 5,
+            "cpu_brand": "AMD Ryzen 9 8945HS w/ Radeon 780M Graphics",
+            "cpu_logical_mean": 16.0,
+            "cpu_physical_mean": 8.0,
+            "mem_total_mean": 31.28,
+            "mem_avail_mean": 16.688,
+            "libs": {
+              "pandas": {
+                "mean": 2.9183727750321853,
+                "median": 3.1685704250412527,
+                "n": 5
+              },
+              "polars": {
+                "mean": 1.4415727450046687,
+                "median": 1.3520504999905825,
+                "n": 5
+              },
+              "duckdb": {
+                "mean": 5.769697964994703,
+                "median": 5.668508025002666,
+                "n": 5
+              }
+            },
+            "overall_mean": 3.376547828343852,
+            "overall_median": 3.3575744166737422
+          },
+          "relative": {
+            "overall_mean_pct": -11.834238340313764,
+            "libs_pct": {
+              "pandas": -42.122727589089074,
+              "polars": 5.153813292951159,
+              "duckdb": -5.201858299661361,
+              "fireducks": null
+            }
+          }
+        },
+        {
+          "format": "parquet",
+          "summary_a": {
+            "rows": 3,
+            "cpu_brand": "11th Gen Intel(R) Core(TM) i7-11850H @ 2.50GHz",
+            "cpu_logical_mean": 16.0,
+            "cpu_physical_mean": 8.0,
+            "mem_total_mean": 31.72,
+            "mem_avail_mean": 18.083333333333332,
+            "libs": {
+              "pandas": {
+                "mean": 1.873552641666682,
+                "median": 2.176878800000054,
+                "n": 3
+              },
+              "polars": {
+                "mean": 1.482221725000045,
+                "median": 1.3773099500000399,
+                "n": 3
+              },
+              "duckdb": {
+                "mean": 4.758347024999883,
+                "median": 4.8894670500000075,
+                "n": 3
+              }
+            },
+            "overall_mean": 2.7047071305555366,
+            "overall_median": 2.6674844666666027
+          },
+          "summary_b": {
+            "rows": 3,
+            "cpu_brand": "AMD Ryzen 9 8945HS w/ Radeon 780M Graphics",
+            "cpu_logical_mean": 16.0,
+            "cpu_physical_mean": 8.0,
+            "mem_total_mean": 31.28,
+            "mem_avail_mean": 14.736666666666666,
+            "libs": {
+              "pandas": {
+                "mean": 2.4447637833169815,
+                "median": 2.942717649973929,
+                "n": 3
+              },
+              "polars": {
+                "mean": 1.453277966667277,
+                "median": 1.3380096000037156,
+                "n": 3
+              },
+              "duckdb": {
+                "mean": 4.965612024980752,
+                "median": 4.8839914499840225,
+                "n": 3
+              }
+            },
+            "overall_mean": 2.95455125832167,
+            "overall_median": 2.921165433314551
+          },
+          "relative": {
+            "overall_mean_pct": -9.237381931063886,
+            "libs_pct": {
+              "pandas": -30.488128753199028,
+              "polars": 1.9527279788566707,
+              "duckdb": -4.355819340033826,
+              "fireducks": null
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "meta": {
+    "version": 1,
+    "generated_at_utc": "2026-01-11T16:41:30.641199+00:00",
+    "generated_via": "compute",
+    "source_report": null,
+    "csv": {
+      "path": "data\\benchmark_results.csv",
+      "size_bytes": 563286,
+      "mtime_epoch": 1768149450.5814548
+    },
+    "args": {
+      "hosts": [
+        "ZBookStudioG8",
+        "WL5040"
+      ],
+      "formats": [
+        "csv",
+        "parquet"
+      ],
+      "libs": [
+        "duckdb",
+        "fireducks",
+        "pandas",
+        "polars"
+      ],
+      "tie_threshold_pct": 5.0
+    },
+    "signature": {
+      "ZBookStudioG8": {
+        "rows": 24,
+        "max_timestamp": "2026-01-11T16:35:53.704083"
+      },
+      "WL5040": {
+        "rows": 31,
+        "max_timestamp": "2025-11-08T10:38:06.486980"
+      }
+    }
+  }
+}
