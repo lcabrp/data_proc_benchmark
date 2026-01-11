@@ -1,0 +1,742 @@
+{
+  "host_a": "ZBookFuryG9",
+  "host_b": "ThinkPadE16G2",
+  "tie_threshold_pct": 5.0,
+  "overall": {
+    "summary_a": {
+      "rows": 24,
+      "cpu_brand": "12th Gen Intel(R) Core(TM) i7-12850HX",
+      "cpu_logical_mean": 24.0,
+      "cpu_physical_mean": 14.666666666666666,
+      "mem_total_mean": 52.38666666666666,
+      "mem_avail_mean": 44.32458333333334,
+      "libs": {
+        "pandas": {
+          "mean": 1.0700523480596196,
+          "median": 0.8740523217500069,
+          "n": 24
+        },
+        "polars": {
+          "mean": 0.8514932577532287,
+          "median": 0.8307593374629505,
+          "n": 24
+        },
+        "duckdb": {
+          "mean": 3.2728067663836105,
+          "median": 3.285744081250016,
+          "n": 24
+        },
+        "fireducks": {
+          "mean": 0.2488761808750075,
+          "median": 0.10944759137500881,
+          "n": 16
+        }
+      },
+      "overall_mean": 1.5062550791818068,
+      "overall_median": 1.3434179134062525
+    },
+    "summary_b": {
+      "rows": 24,
+      "cpu_brand": "AMD Ryzen 7 7735HS with Radeon Graphics",
+      "cpu_logical_mean": 16.0,
+      "cpu_physical_mean": 8.0,
+      "mem_total_mean": 25.303333333333335,
+      "mem_avail_mean": 18.397083333333335,
+      "libs": {
+        "pandas": {
+          "mean": 1.1221281744270708,
+          "median": 0.8876575407499985,
+          "n": 24
+        },
+        "polars": {
+          "mean": 1.1798927796353926,
+          "median": 1.1667681632499693,
+          "n": 24
+        },
+        "duckdb": {
+          "mean": 4.871867640583324,
+          "median": 4.321498926499913,
+          "n": 24
+        },
+        "fireducks": {
+          "mean": 0.2897059474843662,
+          "median": 0.18090194399998438,
+          "n": 16
+        }
+      },
+      "overall_mean": 2.0418960233289782,
+      "overall_median": 2.230749830312466
+    },
+    "relative": {
+      "overall_mean_pct": -35.56110459312974,
+      "libs_pct": {
+        "pandas": -4.866661566780632,
+        "polars": -38.567483522851035,
+        "duckdb": -48.85900660632787,
+        "fireducks": -16.40565459732143
+      }
+    }
+  },
+  "by_os": [
+    {
+      "os": "Linux",
+      "summary_a": {
+        "rows": 8,
+        "cpu_brand": "12th Gen Intel(R) Core(TM) i7-12850HX",
+        "cpu_logical_mean": 24.0,
+        "cpu_physical_mean": 16.0,
+        "mem_total_mean": 62.4,
+        "mem_avail_mean": 53.665,
+        "libs": {
+          "pandas": {
+            "mean": 0.7535509524062576,
+            "median": 0.7874208630000084,
+            "n": 8
+          },
+          "polars": {
+            "mean": 0.8239865157499935,
+            "median": 0.8048106899999965,
+            "n": 8
+          },
+          "duckdb": {
+            "mean": 2.721966546343756,
+            "median": 2.744980323500002,
+            "n": 8
+          },
+          "fireducks": {
+            "mean": 0.21948028128125863,
+            "median": 0.0807752318749948,
+            "n": 8
+          }
+        },
+        "overall_mean": 1.1297460739453165,
+        "overall_median": 1.1370624072187603
+      },
+      "summary_b": {
+        "rows": 8,
+        "cpu_brand": "AMD Ryzen 7 7735HS with Radeon Graphics",
+        "cpu_logical_mean": 16.0,
+        "cpu_physical_mean": 8.0,
+        "mem_total_mean": 30.12,
+        "mem_avail_mean": 23.38125,
+        "libs": {
+          "pandas": {
+            "mean": 0.689689418124992,
+            "median": 0.708903935249964,
+            "n": 8
+          },
+          "polars": {
+            "mean": 1.0718200179062478,
+            "median": 1.0160410271249702,
+            "n": 8
+          },
+          "duckdb": {
+            "mean": 3.8653368389999727,
+            "median": 3.89523142512499,
+            "n": 8
+          },
+          "fireducks": {
+            "mean": 0.22375174362500871,
+            "median": 0.09292890987498481,
+            "n": 8
+          }
+        },
+        "overall_mean": 1.4626495046640553,
+        "overall_median": 1.4781700372500026
+      },
+      "relative": {
+        "overall_mean_pct": -29.46710224503533,
+        "libs_pct": {
+          "pandas": 8.474746674706122,
+          "polars": -30.077373527244678,
+          "duckdb": -42.00530290102327,
+          "fireducks": -1.9461713456965697
+        }
+      },
+      "by_format": [
+        {
+          "format": "csv",
+          "summary_a": {
+            "rows": 5,
+            "cpu_brand": "12th Gen Intel(R) Core(TM) i7-12850HX",
+            "cpu_logical_mean": 24.0,
+            "cpu_physical_mean": 16.0,
+            "mem_total_mean": 62.4,
+            "mem_avail_mean": 54.256,
+            "libs": {
+              "pandas": {
+                "mean": 0.7596230526000113,
+                "median": 0.7790548840000042,
+                "n": 5
+              },
+              "polars": {
+                "mean": 0.8241923475499903,
+                "median": 0.808376571249994,
+                "n": 5
+              },
+              "duckdb": {
+                "mean": 2.8233785509000113,
+                "median": 2.8804588527500243,
+                "n": 5
+              },
+              "fireducks": {
+                "mean": 0.19153853070000365,
+                "median": 0.08083192875000123,
+                "n": 5
+              }
+            },
+            "overall_mean": 1.1496831204375042,
+            "overall_median": 1.1385056830000053
+          },
+          "summary_b": {
+            "rows": 5,
+            "cpu_brand": "AMD Ryzen 7 7735HS with Radeon Graphics",
+            "cpu_logical_mean": 16.0,
+            "cpu_physical_mean": 8.0,
+            "mem_total_mean": 30.12,
+            "mem_avail_mean": 23.936,
+            "libs": {
+              "pandas": {
+                "mean": 0.6986967102500102,
+                "median": 0.7132443567500104,
+                "n": 5
+              },
+              "polars": {
+                "mean": 1.0565701013499846,
+                "median": 1.0146411427500084,
+                "n": 5
+              },
+              "duckdb": {
+                "mean": 4.036863315699941,
+                "median": 4.093811212499929,
+                "n": 5
+              },
+              "fireducks": {
+                "mean": 0.19952509519999923,
+                "median": 0.09283466399995177,
+                "n": 5
+              }
+            },
+            "overall_mean": 1.4979138056249837,
+            "overall_median": 1.4808167533124958
+          },
+          "relative": {
+            "overall_mean_pct": -30.28927527917106,
+            "libs_pct": {
+              "pandas": 8.020602079079154,
+              "polars": -28.19460220551245,
+              "duckdb": -42.97988183033784,
+              "fireducks": -4.169690803624517
+            }
+          }
+        },
+        {
+          "format": "parquet",
+          "summary_a": {
+            "rows": 3,
+            "cpu_brand": "12th Gen Intel(R) Core(TM) i7-12850HX",
+            "cpu_logical_mean": 24.0,
+            "cpu_physical_mean": 16.0,
+            "mem_total_mean": 62.4,
+            "mem_avail_mean": 52.68,
+            "libs": {
+              "pandas": {
+                "mean": 0.7434307854166681,
+                "median": 0.7957868420000125,
+                "n": 3
+              },
+              "polars": {
+                "mean": 0.8236434627499989,
+                "median": 0.7813144850000242,
+                "n": 3
+              },
+              "duckdb": {
+                "mean": 2.5529465387499974,
+                "median": 2.528376109000021,
+                "n": 3
+              },
+              "fireducks": {
+                "mean": 0.26604986558335025,
+                "median": 0.08071853499998838,
+                "n": 3
+              }
+            },
+            "overall_mean": 1.0965176631250035,
+            "overall_median": 1.0457481606250312
+          },
+          "summary_b": {
+            "rows": 3,
+            "cpu_brand": "AMD Ryzen 7 7735HS with Radeon Graphics",
+            "cpu_logical_mean": 16.0,
+            "cpu_physical_mean": 8.0,
+            "mem_total_mean": 30.12,
+            "mem_avail_mean": 22.456666666666667,
+            "libs": {
+              "pandas": {
+                "mean": 0.6746772645832948,
+                "median": 0.7048783092499775,
+                "n": 3
+              },
+              "polars": {
+                "mean": 1.0972365455000197,
+                "median": 1.0296268335000036,
+                "n": 3
+              },
+              "duckdb": {
+                "mean": 3.579459377833359,
+                "median": 3.5475259497500247,
+                "n": 3
+              },
+              "fireducks": {
+                "mean": 0.26412949100002453,
+                "median": 0.09302315575001785,
+                "n": 3
+              }
+            },
+            "overall_mean": 1.4038756697291745,
+            "overall_median": 1.3442898376249985
+          },
+          "relative": {
+            "overall_mean_pct": -28.030374424450294,
+            "libs_pct": {
+              "pandas": 9.248140133830915,
+              "polars": -33.217416894992674,
+              "duckdb": -40.20894380287237,
+              "fireducks": 0.7218100182516699
+            }
+          }
+        }
+      ]
+    },
+    {
+      "os": "WSL2",
+      "summary_a": {
+        "rows": 8,
+        "cpu_brand": "12th Gen Intel(R) Core(TM) i7-12850HX",
+        "cpu_logical_mean": 24.0,
+        "cpu_physical_mean": 12.0,
+        "mem_total_mean": 31.15,
+        "mem_avail_mean": 28.89,
+        "libs": {
+          "pandas": {
+            "mean": 0.8583349355624978,
+            "median": 0.8740523217500069,
+            "n": 8
+          },
+          "polars": {
+            "mean": 0.8640405325312486,
+            "median": 0.842258502875012,
+            "n": 8
+          },
+          "duckdb": {
+            "mean": 3.578423218468753,
+            "median": 3.566195559499988,
+            "n": 8
+          },
+          "fireducks": {
+            "mean": 0.2782720804687564,
+            "median": 0.11717355887503089,
+            "n": 8
+          }
+        },
+        "overall_mean": 1.394767691757814,
+        "overall_median": 1.3434179134062525
+      },
+      "summary_b": {
+        "rows": 8,
+        "cpu_brand": "AMD Ryzen 7 7735HS with Radeon Graphics",
+        "cpu_logical_mean": 16.0,
+        "cpu_physical_mean": 8.0,
+        "mem_total_mean": 15.01,
+        "mem_avail_mean": 12.9325,
+        "libs": {
+          "pandas": {
+            "mean": 0.8850156676562548,
+            "median": 0.8876575407499985,
+            "n": 8
+          },
+          "polars": {
+            "mean": 1.3174704959999772,
+            "median": 1.235087685374964,
+            "n": 8
+          },
+          "duckdb": {
+            "mean": 6.4873095421249865,
+            "median": 6.423664449499981,
+            "n": 8
+          },
+          "fireducks": {
+            "mean": 0.35566015134372364,
+            "median": 0.1943192212499838,
+            "n": 8
+          }
+        },
+        "overall_mean": 2.2613639642812355,
+        "overall_median": 2.2362244337187427
+      },
+      "relative": {
+        "overall_mean_pct": -62.13194337985113,
+        "libs_pct": {
+          "pandas": -3.108429004613699,
+          "polars": -52.47785797043382,
+          "duckdb": -81.28961126350443,
+          "fireducks": -27.81021751970412
+        }
+      },
+      "by_format": [
+        {
+          "format": "csv",
+          "summary_a": {
+            "rows": 5,
+            "cpu_brand": "12th Gen Intel(R) Core(TM) i7-12850HX",
+            "cpu_logical_mean": 24.0,
+            "cpu_physical_mean": 12.0,
+            "mem_total_mean": 31.15,
+            "mem_avail_mean": 29.266000000000002,
+            "libs": {
+              "pandas": {
+                "mean": 0.8488680888499942,
+                "median": 0.8732251555000232,
+                "n": 5
+              },
+              "polars": {
+                "mean": 0.8477728691000038,
+                "median": 0.8261186189999989,
+                "n": 5
+              },
+              "duckdb": {
+                "mean": 3.627715942900005,
+                "median": 3.5707848982499826,
+                "n": 5
+              },
+              "fireducks": {
+                "mean": 0.2388560659500115,
+                "median": 0.11044877475002579,
+                "n": 5
+              }
+            },
+            "overall_mean": 1.3908032417000036,
+            "overall_median": 1.3427568012499975
+          },
+          "summary_b": {
+            "rows": 5,
+            "cpu_brand": "AMD Ryzen 7 7735HS with Radeon Graphics",
+            "cpu_logical_mean": 16.0,
+            "cpu_physical_mean": 8.0,
+            "mem_total_mean": 15.01,
+            "mem_avail_mean": 13.29,
+            "libs": {
+              "pandas": {
+                "mean": 0.889285080999997,
+                "median": 0.892314159499989,
+                "n": 5
+              },
+              "polars": {
+                "mean": 1.3206242825499885,
+                "median": 1.2424369214999444,
+                "n": 5
+              },
+              "duckdb": {
+                "mean": 6.702145688649989,
+                "median": 6.665040659749991,
+                "n": 5
+              },
+              "fireducks": {
+                "mean": 0.3149370505999741,
+                "median": 0.1931281499999784,
+                "n": 5
+              }
+            },
+            "overall_mean": 2.3067480256999873,
+            "overall_median": 2.237249906812501
+          },
+          "relative": {
+            "overall_mean_pct": -65.85725115800048,
+            "libs_pct": {
+              "pandas": -4.761280660786511,
+              "polars": -55.77571902624862,
+              "duckdb": -84.74835941240421,
+              "fireducks": -31.85223048339291
+            }
+          }
+        },
+        {
+          "format": "parquet",
+          "summary_a": {
+            "rows": 3,
+            "cpu_brand": "12th Gen Intel(R) Core(TM) i7-12850HX",
+            "cpu_logical_mean": 24.0,
+            "cpu_physical_mean": 12.0,
+            "mem_total_mean": 31.15,
+            "mem_avail_mean": 28.263333333333335,
+            "libs": {
+              "pandas": {
+                "mean": 0.8741130134166705,
+                "median": 0.895675926999985,
+                "n": 3
+              },
+              "polars": {
+                "mean": 0.8911533049166565,
+                "median": 0.8778040889999659,
+                "n": 3
+              },
+              "duckdb": {
+                "mean": 3.4962686777500003,
+                "median": 3.4396654855000293,
+                "n": 3
+              },
+              "fireducks": {
+                "mean": 0.3439654379999979,
+                "median": 0.1311074037499793,
+                "n": 3
+              }
+            },
+            "overall_mean": 1.4013751085208312,
+            "overall_median": 1.3444099247499963
+          },
+          "summary_b": {
+            "rows": 3,
+            "cpu_brand": "AMD Ryzen 7 7735HS with Radeon Graphics",
+            "cpu_logical_mean": 16.0,
+            "cpu_physical_mean": 8.0,
+            "mem_total_mean": 15.01,
+            "mem_avail_mean": 12.336666666666666,
+            "libs": {
+              "pandas": {
+                "mean": 0.8778999787500178,
+                "median": 0.8830009220000079,
+                "n": 3
+              },
+              "polars": {
+                "mean": 1.3122141850832918,
+                "median": 1.2054943174999266,
+                "n": 3
+              },
+              "duckdb": {
+                "mean": 6.129249297916648,
+                "median": 6.10115688274999,
+                "n": 3
+              },
+              "fireducks": {
+                "mean": 0.42353198591663954,
+                "median": 0.1955102924999892,
+                "n": 3
+              }
+            },
+            "overall_mean": 2.1857238619166495,
+            "overall_median": 2.12362223506247
+          },
+          "relative": {
+            "overall_mean_pct": -55.969936145341414,
+            "libs_pct": {
+              "pandas": -0.4332352081734953,
+              "polars": -47.24898374315229,
+              "duckdb": -75.30830330411233,
+              "fireducks": -23.132134547960636
+            }
+          }
+        }
+      ]
+    },
+    {
+      "os": "Windows",
+      "summary_a": {
+        "rows": 8,
+        "cpu_brand": "12th Gen Intel(R) Core(TM) i7-12850HX",
+        "cpu_logical_mean": 24.0,
+        "cpu_physical_mean": 16.0,
+        "mem_total_mean": 63.61,
+        "mem_avail_mean": 50.41875,
+        "libs": {
+          "pandas": {
+            "mean": 1.598271156210103,
+            "median": 1.7811326750088483,
+            "n": 8
+          },
+          "polars": {
+            "mean": 0.8664527249784442,
+            "median": 0.837914087518584,
+            "n": 8
+          },
+          "duckdb": {
+            "mean": 3.5180305343383225,
+            "median": 3.5196314625791274,
+            "n": 8
+          }
+        },
+        "overall_mean": 1.99425147184229,
+        "overall_median": 2.0248158291409104
+      },
+      "summary_b": {
+        "rows": 8,
+        "cpu_brand": "AMD Ryzen 7 7735HS with Radeon Graphics",
+        "cpu_logical_mean": 16.0,
+        "cpu_physical_mean": 8.0,
+        "mem_total_mean": 30.78,
+        "mem_avail_mean": 18.8775,
+        "libs": {
+          "pandas": {
+            "mean": 1.7916794374999654,
+            "median": 2.0323316999999292,
+            "n": 8
+          },
+          "polars": {
+            "mean": 1.150387824999953,
+            "median": 1.0753449499999306,
+            "n": 8
+          },
+          "duckdb": {
+            "mean": 4.262956540625012,
+            "median": 4.273836637499983,
+            "n": 8
+          }
+        },
+        "overall_mean": 2.4016746010416434,
+        "overall_median": 2.407670404166595
+      },
+      "relative": {
+        "overall_mean_pct": -20.429877322491127,
+        "libs_pct": {
+          "pandas": -12.101093142948365,
+          "polars": -32.76983173300918,
+          "duckdb": -21.174517930294112,
+          "fireducks": null
+        }
+      },
+      "by_format": [
+        {
+          "format": "csv",
+          "summary_a": {
+            "rows": 5,
+            "cpu_brand": "12th Gen Intel(R) Core(TM) i7-12850HX",
+            "cpu_logical_mean": 24.0,
+            "cpu_physical_mean": 16.0,
+            "mem_total_mean": 63.61,
+            "mem_avail_mean": 51.818,
+            "libs": {
+              "pandas": {
+                "mean": 1.6534001999767498,
+                "median": 1.7962906500324607,
+                "n": 5
+              },
+              "polars": {
+                "mean": 0.872336549963802,
+                "median": 0.8414222500286996,
+                "n": 5
+              },
+              "duckdb": {
+                "mean": 3.747635969961993,
+                "median": 3.698445874848403,
+                "n": 5
+              }
+            },
+            "overall_mean": 2.091124239967515,
+            "overall_median": 2.0878388499841094
+          },
+          "summary_b": {
+            "rows": 5,
+            "cpu_brand": "AMD Ryzen 7 7735HS with Radeon Graphics",
+            "cpu_logical_mean": 16.0,
+            "cpu_physical_mean": 8.0,
+            "mem_total_mean": 30.78,
+            "mem_avail_mean": 19.866,
+            "libs": {
+              "pandas": {
+                "mean": 1.8666451599999845,
+                "median": 2.0449650250000104,
+                "n": 5
+              },
+              "polars": {
+                "mean": 1.143598864999967,
+                "median": 1.0913875499999222,
+                "n": 5
+              },
+              "duckdb": {
+                "mean": 4.433516689999988,
+                "median": 4.30397354999991,
+                "n": 5
+              }
+            },
+            "overall_mean": 2.4812535716666466,
+            "overall_median": 2.4508829583333713
+          },
+          "relative": {
+            "overall_mean_pct": -18.656439643451897,
+            "libs_pct": {
+              "pandas": -12.897359031783918,
+              "polars": -31.096062070014284,
+              "duckdb": -18.301690066363367,
+              "fireducks": null
+            }
+          }
+        },
+        {
+          "format": "parquet",
+          "summary_a": {
+            "rows": 3,
+            "cpu_brand": "12th Gen Intel(R) Core(TM) i7-12850HX",
+            "cpu_logical_mean": 24.0,
+            "cpu_physical_mean": 16.0,
+            "mem_total_mean": 63.61,
+            "mem_avail_mean": 48.086666666666666,
+            "libs": {
+              "pandas": {
+                "mean": 1.5063894165990253,
+                "median": 1.7198300998425111,
+                "n": 3
+              },
+              "polars": {
+                "mean": 0.8566463500028476,
+                "median": 0.8122005250770599,
+                "n": 3
+              },
+              "duckdb": {
+                "mean": 3.135354808298871,
+                "median": 3.1487889249110594,
+                "n": 3
+              }
+            },
+            "overall_mean": 1.8327968583002479,
+            "overall_median": 1.8386748331831768
+          },
+          "summary_b": {
+            "rows": 3,
+            "cpu_brand": "AMD Ryzen 7 7735HS with Radeon Graphics",
+            "cpu_logical_mean": 16.0,
+            "cpu_physical_mean": 8.0,
+            "mem_total_mean": 30.78,
+            "mem_avail_mean": 17.23,
+            "libs": {
+              "pandas": {
+                "mean": 1.6667365666666,
+                "median": 2.0250893499999165,
+                "n": 3
+              },
+              "polars": {
+                "mean": 1.1617027583332629,
+                "median": 1.0479646749998892,
+                "n": 3
+              },
+              "duckdb": {
+                "mean": 3.978689625000053,
+                "median": 3.8066675750001195,
+                "n": 3
+              }
+            },
+            "overall_mean": 2.2690429833333052,
+            "overall_median": 2.2876669666666203
+          },
+          "relative": {
+            "overall_mean_pct": -23.802208251144425,
+            "libs_pct": {
+              "pandas": -10.64446870780535,
+              "polars": -35.610542008309636,
+              "duckdb": -26.897587937064927,
+              "fireducks": null
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

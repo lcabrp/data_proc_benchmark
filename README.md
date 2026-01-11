@@ -169,6 +169,7 @@ Notes:
 - Positive percentage deltas mean the second host (`--host` B) is faster.
 - Use `--libs`/`--formats` to scope analysis; omit to auto-include available ones.
 - `--json-out` is optional; defaults to `data/results/compare_<hostA>_vs_<hostB>.json` (or `.ndjson` when `--ndjson`).
+- The tool reuses previously generated JSON/NDJSON reports when possible (cache hit), including using an existing `compare_<B>_vs_<A>.json` if it matches the current CSV/filters; pass `--force` to recompute.
 - Reports start with a one-line headline winner and a Summary block; use `--quiet` for a concise view.
 - `--out-dir` sets the directory used for inferred filenames when `--json-out` is omitted.
 - `--no-export` skips writing JSON/NDJSON and prints to console only.
