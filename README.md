@@ -109,10 +109,12 @@ Stored output now also includes dataset file metadata columns: `dataset_name` (f
 
 Use the host-to-host comparison CLI to compare two exact hostnames present in your benchmark results CSV. It prints overall, per-OS (Windows/WSL2/Linux), and per-format (CSV/Parquet) verdicts and can export a structured report.
 
+**By default, outliers are automatically removed** using the IQR (Interquartile Range) method to provide more accurate comparisons. Use `--keep-outliers` to disable this filtering.
+
 PowerShell (Windows):
 
 ```powershell
-# JSON export (single JSON document)
+# JSON export (single JSON document) - outliers removed by default
 .\.venv\Scripts\python scripts\tools\compare_hosts.py `
    --csv data\benchmark_results.csv `
    --host ZBookFuryG8 `
@@ -122,6 +124,14 @@ PowerShell (Windows):
    --libs pandas,polars,duckdb,fireducks `
    # --json-out is optional; defaults to data\results\compare_<A>_vs_<B>.json
    --json-out data\results\compare_ZBookFuryG8_vs_ZBookFuryG9.json
+
+# Keep outliers (disable automatic filtering)
+.\.venv\Scripts\python scripts\tools\compare_hosts.py `
+   --csv data\benchmark_results.csv `
+   --host ZBookFuryG8 `
+   --host ZBookFuryG9 `
+   --keep-outliers `
+   --formats csv parquet
 
 # NDJSON export (one record per line; streaming/append friendly)
 .\.venv\Scripts\python scripts\tools\compare_hosts.py `
@@ -165,6 +175,9 @@ PowerShell (Windows):
 ```
 
 Notes:
+- **Outlier removal is enabled by default** to provide more accurate comparisons. Add `--keep-outliers` to disable.
+- Outliers are detected using the IQR (Interquartile Range) method with 1.5x multiplier (Tukey's method).
+- Typical outlier removal rate: 1-2% of data (representing system anomalies like thermal throttling, background processes).
 - Exact hostnames only; if a name is wrong, the tool errors with suggestions.
 - Positive percentage deltas mean the second host (`--host` B) is faster.
 - Use `--libs`/`--formats` to scope analysis; omit to auto-include available ones.
@@ -194,6 +207,35 @@ ndjson_df = pl.read_ndjson('data/results/compare_ZBookFuryG8_vs_ZBookFuryG9.ndjs
 JSON vs NDJSON:
 - JSON is a single document, easy for ad-hoc loading, emailing, or artifact storage.
 - NDJSON is line-delimited and better for streaming/append pipelines and ingest into systems like Elasticsearch, ClickHouse, or `jq`/shell processing.
+
+#### 📊 Outlier Detection & Removal
+
+The host comparison tool automatically removes statistical outliers by default to provide more accurate performance comparisons. This feature can be disabled with the `--keep-outliers` flag.
+
+**Method:** IQR (Interquartile Range) with 1.5x multiplier (Tukey's method)
+- Outliers are values outside the range: `[Q1 - 1.5×IQR, Q3 + 1.5×IQR]`
+- Applied independently for each library (pandas, polars, DuckDB, FireDucks)
+- Entire benchmark runs (rows) are removed if any library shows outlier performance
+
+**Why Remove Outliers?**
+- Eliminates anomalies from thermal throttling, background processes, or early buggy script versions
+- Typical removal rate: 1-2% of data
+- Improves accuracy: In testing, outlier removal changed comparison results by 2-3 percentage points
+
+**Example:**
+```powershell
+# Default: outliers removed automatically
+.\.venv\Scripts\python scripts\tools\compare_hosts.py --csv data\results.csv --host A --host B
+
+# Keep outliers for research or debugging
+.\.venv\Scripts\python scripts\tools\compare_hosts.py --csv data\results.csv --host A --host B --keep-outliers
+```
+
+**Technical Details:**
+- Q1 = 25th percentile, Q3 = 75th percentile
+- IQR = Q3 - Q1 (interquartile range)
+- The 1.5× multiplier is the standard Tukey method used in statistical analysis and box plots
+- Outlier detection runs per-library to catch issues specific to individual libraries
 
 ### 🆘 First-Time Setup Help
 

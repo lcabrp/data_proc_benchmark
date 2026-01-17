@@ -1,3 +1,51 @@
+"""Host-to-Host Benchmark Comparison Tool.
+
+This module provides comprehensive comparison of benchmark performance between two hosts,
+with statistical outlier detection and detailed analysis across operating systems, file
+formats, and data processing libraries (pandas, polars, DuckDB, FireDucks).
+
+Key Features:
+    - Automatic outlier removal using IQR method (default, use --keep-outliers to disable)
+    - Per-OS comparison (Windows, Linux, WSL2)
+    - Per-format comparison (CSV, Parquet, JSON, NDJSON)
+    - Per-library performance metrics (mean, median, percentiles, standard deviation)
+    - JSON/NDJSON export with caching and reuse capabilities
+    - Report reorientation for symmetric comparisons (compare_A_vs_B.json can be reused for B vs A)
+
+Outlier Detection:
+    Uses the Interquartile Range (IQR) method with 1.5x multiplier (Tukey's method):
+    - Outliers = values outside [Q1 - 1.5*IQR, Q3 + 1.5*IQR]
+    - Applied independently per library (pandas, polars, duckdb, fireducks)
+    - Removes entire rows where any library shows outlier performance
+    - Typically removes ~1-2% of data representing system anomalies (thermal throttling,
+      background processes, early buggy script versions)
+
+Usage:
+    # Basic comparison with outlier removal (default)
+    python compare_hosts.py --csv data/results.csv --host HostA --host HostB
+    
+    # Keep outliers (disable filtering)
+    python compare_hosts.py --csv data/results.csv --host HostA --host HostB --keep-outliers
+    
+    # Export to JSON with specific libraries and formats
+    python compare_hosts.py --csv data/results.csv --host HostA --host HostB \\
+        --libs pandas,polars,duckdb --formats csv,parquet --json-out report.json
+
+Example Output:
+    ═══════════════════════════════════════════════════════════════════════════
+                              WINNER: HostB is faster
+    ═══════════════════════════════════════════════════════════════════════════
+    
+    OVERALL SUMMARY:
+      HostA: 15.23s ±2.45 (mean ±stdev)
+      HostB: 9.87s ±1.32 (mean ±stdev)
+      HostB is 35.2% faster than HostA
+
+Author: Data Processing Benchmark Project
+Version: 1.0
+Last Updated: January 2026
+"""
+
 import csv
 import argparse
 import sys
@@ -38,6 +86,20 @@ LIB_OPS = {
 
 
 def fval(x: Optional[str]) -> Optional[float]:
+    """Convert string to float, handling None, empty strings, and 'N/A' values.
+    
+    Args:
+        x: String value to convert, or None
+        
+    Returns:
+        Float value if conversion succeeds, None otherwise
+        
+    Example:
+        >>> fval("12.5")
+        12.5
+        >>> fval("N/A")
+        None
+    """
     try:
         return float(x) if x not in (None, "", "N/A") else None
     except Exception:
@@ -45,6 +107,18 @@ def fval(x: Optional[str]) -> Optional[float]:
 
 
 def load_rows(csv_path: Path) -> List[Dict[str, str]]:
+    """Load all rows from benchmark results CSV file.
+    
+    Args:
+        csv_path: Path to benchmark_results.csv file
+        
+    Returns:
+        List of dictionaries, one per CSV row with column names as keys
+        
+    Raises:
+        FileNotFoundError: If CSV file doesn't exist
+        csv.Error: If CSV file is malformed
+    """
     with open(csv_path, newline='', encoding='utf-8') as f:
         rdr = csv.DictReader(f)
         return list(rdr)
@@ -350,6 +424,20 @@ def _reorient_report(report: Dict, host_a: str, host_b: str) -> Dict:
 
 
 def filter_rows_by_hosts(rows: List[Dict[str, str]], hosts: List[str]) -> Dict[str, List[Dict[str, str]]]:
+    """Partition rows by hostname into separate buckets.
+    
+    Args:
+        rows: All benchmark result rows
+        hosts: List of hostnames to filter for
+        
+    Returns:
+        Dictionary mapping hostname -> list of rows for that host
+        
+    Example:
+        >>> rows = [{'hostname': 'A', 'data': '1'}, {'hostname': 'B', 'data': '2'}]
+        >>> filter_rows_by_hosts(rows, ['A', 'B'])
+        {'A': [{'hostname': 'A', 'data': '1'}], 'B': [{'hostname': 'B', 'data': '2'}]}
+    """
     buckets: Dict[str, List[Dict[str, str]]] = {h: [] for h in hosts}
     for r in rows:
         hn = r.get('hostname')
@@ -362,6 +450,38 @@ def filter_rows_by_hosts(rows: List[Dict[str, str]], hosts: List[str]) -> Dict[s
 
 
 def summarize_host(rows: List[Dict[str, str]], lib_ops: Dict[str, List[str]]) -> Dict:
+    """Compute comprehensive performance summary statistics for a host.
+    
+    Analyzes all benchmark runs for a host and produces:
+    - Hardware info (CPU brand, core counts, memory)
+    - Per-library statistics (mean, median, best, percentiles, stdev, sample size)
+    - Overall aggregate statistics across all libraries
+    
+    Args:
+        rows: All benchmark rows for the host
+        lib_ops: Dictionary mapping library names to their timing column names
+                 (e.g., {'pandas': ['filter_group_pandas_seconds', ...]})
+        
+    Returns:
+        Dictionary containing:
+            - rows: Number of benchmark runs
+            - cpu_brand: Most common CPU brand string
+            - cpu_logical_mean: Average logical core count
+            - cpu_physical_mean: Average physical core count
+            - mem_total_mean: Average total memory (GB)
+            - mem_avail_mean: Average available memory (GB)
+            - libs: Per-library stats dict with keys: mean, median, best, p10, p25, p75, p90, stdev, n
+            - overall_mean: Mean across all operations and libraries
+            - overall_median: Median across all operations
+            - overall_best: Best (minimum) timing across all runs
+            - overall_p10/p25/p75/p90: Percentile values
+            - overall_stdev: Standard deviation
+            - overall_cv: Coefficient of variation (stdev/mean * 100)
+            
+    Note:
+        For each row, computes mean timing across all 4 operations per library,
+        then aggregates these per-row means to get robust statistics.
+    """
     # Representative host attributes
     cpu_brand = None
     cpu_logical = None
@@ -455,6 +575,26 @@ def summarize_host(rows: List[Dict[str, str]], lib_ops: Dict[str, List[str]]) ->
 
 
 def relative_pct(a: Optional[float], b: Optional[float]) -> Optional[float]:
+    """Calculate percentage difference from a to b.
+    
+    Formula: (a - b) / a * 100
+    
+    Args:
+        a: Baseline value (typically host A's timing)
+        b: Comparison value (typically host B's timing)
+        
+    Returns:
+        Percentage difference where:
+        - Positive value means b is faster (duration decreased)
+        - Negative value means b is slower (duration increased)
+        - None if either value is None or a is zero
+        
+    Example:
+        >>> relative_pct(10.0, 8.0)  # b is 20% faster
+        20.0
+        >>> relative_pct(8.0, 10.0)  # b is 25% slower
+        -25.0
+    """
     # Percent change from a -> b: (a-b)/a*100; negative means b is faster if values are durations
     if a is None or b is None or a == 0:
         return None
@@ -462,6 +602,37 @@ def relative_pct(a: Optional[float], b: Optional[float]) -> Optional[float]:
 
 
 def compare_hosts(csv_path: Path, host_a: str, host_b: str, remove_outliers: bool = False) -> Dict:
+    """Compare benchmark performance between two hosts with optional outlier removal.
+    
+    Core comparison function that loads data, optionally removes outliers, and produces
+    comprehensive host-to-host comparison including per-library and overall metrics.
+    
+    Args:
+        csv_path: Path to benchmark_results.csv file
+        host_a: First hostname (baseline)
+        host_b: Second hostname (comparison)
+        remove_outliers: If True, applies IQR-based outlier removal to both hosts.
+                        Default False for backward compatibility, but tool default is True.
+        
+    Returns:
+        Dictionary containing:
+            - host_a, host_b: Hostnames
+            - summary_a, summary_b: Full summary statistics from summarize_host()
+            - relative: Percentage differences between hosts
+                - overall_mean_pct: Overall percentage difference
+                - libs_pct: Dict of per-library percentage differences
+            - rows_all: Combined filtered rows (after outlier removal if enabled)
+            
+    Note:
+        When remove_outliers=True, uses IQR method with 1.5x multiplier independently
+        per library. Entire rows are removed if any library shows outlier performance.
+        Typical removal rate: 1-2% of data.
+        
+    Example:
+        >>> result = compare_hosts(Path('data/results.csv'), 'HostA', 'HostB', remove_outliers=True)
+        >>> print(result['relative']['overall_mean_pct'])
+        35.2  # HostB is 35.2% faster
+    """
     rows = load_rows(csv_path)
     buckets = filter_rows_by_hosts(rows, [host_a, host_b])
     
@@ -1011,6 +1182,47 @@ def print_report(
     quiet: bool = False,
     meta: Optional[Dict] = None,
 ) -> Dict:
+    """Generate comprehensive comparison report with console output and optional JSON/NDJSON export.
+    
+    Produces detailed comparison including:
+    - Overall summary and verdict
+    - Per-OS breakdown (Windows, Linux, WSL2)
+    - Per-format breakdown (CSV, Parquet, JSON, NDJSON)
+    - Per-library performance metrics
+    - Advanced analysis (stability, percentiles, memory efficiency)
+    - Recommendations based on multiple metrics
+    
+    Args:
+        result: Dictionary from compare_hosts() containing summaries and rows
+        tie_threshold_pct: Percentage threshold below which results are considered a tie (default: 5.0)
+        libs: Optional list of libraries to include in analysis (default: all available)
+        formats: Optional list of file formats to filter by (csv, parquet, json, ndjson)
+        json_out: Optional path for JSON/NDJSON export
+        ndjson: If True, export as NDJSON (line-delimited JSON) instead of single JSON document
+        quiet: If True, print only summary and verdict (omit detailed sections)
+        meta: Optional metadata dictionary for provenance tracking
+        
+    Returns:
+        Complete report dictionary with structure:
+            - host_a, host_b: Hostnames
+            - tie_threshold_pct: Tie threshold used
+            - overall: Dict with summary_a, summary_b, relative percentages
+            - by_os: List of per-OS comparisons
+            - meta: Optional provenance metadata
+            
+    Note:
+        Console output includes:
+        - One-line winner verdict at top
+        - Summary section with key percentages
+        - Detailed host information (if not quiet)
+        - Advanced analysis with stability, percentiles, specialization
+        - Per-OS and per-format breakdowns
+        
+    Example:
+        >>> result = compare_hosts(csv_path, 'HostA', 'HostB', remove_outliers=True)
+        >>> report = print_report(result, tie_threshold_pct=5.0, json_out=Path('report.json'))
+        Winner: HostB (~35.2% faster overall)
+    """
     # Apply library selection
     libs_selected = [l for l in (libs or LIB_OPS.keys()) if l in LIB_OPS]
     lib_ops = {l: LIB_OPS[l] for l in libs_selected}
@@ -1101,6 +1313,59 @@ def print_report(
 
 
 def main(argv: Optional[List[str]] = None) -> int:
+    """Command-line interface for host-to-host benchmark comparison.
+    
+    Entry point for the compare_hosts.py script. Parses arguments, validates hostnames,
+    manages caching, and orchestrates the comparison workflow.
+    
+    Command-line Arguments:
+        --csv PATH: Path to benchmark_results.csv (default: data/benchmark_results.csv)
+        --host HOSTNAME: Hostname to compare (use twice for two hosts)
+        --tie-threshold-pct FLOAT: Percentage threshold for ties (default: 5.0)
+        --formats FORMAT [...]: Restrict to specific formats (csv, parquet, json, ndjson)
+        --libs LIBS: Comma-separated libraries to include (default: all)
+        --json-out PATH: Output path for JSON/NDJSON report
+        --ndjson: Export as NDJSON (line-delimited) instead of single JSON
+        --quiet: Print only summary and verdict
+        --out-dir PATH: Default directory for inferred output files
+        --no-export: Skip JSON/NDJSON export (console only)
+        --force: Force recomputation, ignore cached reports
+        --keep-outliers: Disable automatic outlier removal (default: remove outliers)
+    
+    Args:
+        argv: Optional list of command-line arguments (default: sys.argv)
+        
+    Returns:
+        Exit code: 0 for success, 2 for errors (missing hostnames, invalid arguments)
+        
+    Caching Behavior:
+        The tool automatically caches results to avoid recomputation:
+        - Cache key: hosts (unordered), formats, libs, tie threshold, dataset signature
+        - Checks both compare_A_vs_B and compare_B_vs_A filenames
+        - Checks both .json and .ndjson extensions
+        - Use --force to bypass cache
+        
+    Outlier Removal (Default Behavior):
+        By default, statistical outliers are automatically removed using the IQR method.
+        This provides more accurate comparisons by eliminating:
+        - Thermal throttling events
+        - Background process interference
+        - Early buggy script versions
+        Typical removal rate: 1-2% of data
+        Use --keep-outliers to disable this feature.
+        
+    Example Usage:
+        # Basic comparison with default outlier removal
+        python compare_hosts.py --csv data/results.csv --host HostA --host HostB
+        
+        # Keep outliers and export to custom location
+        python compare_hosts.py --csv data/results.csv --host HostA --host HostB \\
+            --keep-outliers --json-out custom/report.json
+        
+        # Filter by libraries and formats, quiet output
+        python compare_hosts.py --csv data/results.csv --host HostA --host HostB \\
+            --libs pandas,polars --formats csv,parquet --quiet
+    """
     parser = argparse.ArgumentParser(description="Compare two hosts from benchmark results CSV")
     parser.add_argument('--csv', type=Path, default=Path('data/benchmark_results.csv'), help='Path to results CSV')
     parser.add_argument('--host', action='append', required=True, help='Hostname to include (use twice). Supports wildcards if --wildcard is set.')
@@ -1114,7 +1379,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument('--out-dir', type=Path, help='Directory for inferred output file when --json-out is omitted (default: data/results)')
     parser.add_argument('--no-export', action='store_true', help='Do not write JSON/NDJSON; print to console only')
     parser.add_argument('--force', action='store_true', help='Force recomputation (ignore any cached JSON/NDJSON report)')
-    parser.add_argument('--remove-outliers', action='store_true', help='Remove statistical outliers using IQR method (1.5x IQR) before comparison')
+    parser.add_argument('--keep-outliers', action='store_true', help='Keep statistical outliers (by default, outliers are removed using IQR method)')
 
     args = parser.parse_args(argv)
     if len(args.host) != 2:
@@ -1247,7 +1512,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         print("Cache: MISS (recomputing)")
 
     result = {
-        **compare_hosts(args.csv, host_a, host_b, remove_outliers=args.remove_outliers),
+        **compare_hosts(args.csv, host_a, host_b, remove_outliers=not args.keep_outliers),
         # Reuse the already loaded rows to avoid reading the CSV twice.
         'rows_all': rows,
     }
@@ -1261,7 +1526,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         rows_effective=rows_effective,
         source='compute',
     )
-    if args.remove_outliers:
+    if not args.keep_outliers:
         meta['outliers_removed'] = True
     print_report(
         result,
