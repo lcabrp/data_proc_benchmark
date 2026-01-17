@@ -2,11 +2,12 @@ import csv
 import argparse
 import sys
 from pathlib import Path
-from statistics import mean, median
+from statistics import mean, median, stdev
 from typing import Dict, List, Optional, Tuple
 import difflib
 from datetime import datetime, timezone
 import os
+import numpy as np
 
 LIB_OPS = {
     'pandas': [
@@ -47,6 +48,47 @@ def load_rows(csv_path: Path) -> List[Dict[str, str]]:
     with open(csv_path, newline='', encoding='utf-8') as f:
         rdr = csv.DictReader(f)
         return list(rdr)
+
+
+def remove_outliers_iqr(rows: List[Dict[str, str]], lib_ops: Dict[str, List[str]], multiplier: float = 1.5) -> Tuple[List[Dict[str, str]], int]:
+    """
+    Remove outlier rows using IQR method per library.
+    For each row, compute mean time per library. Remove rows where any library's mean is an outlier.
+    Returns: (filtered_rows, num_removed)
+    """
+    if len(rows) < 4:  # Need at least 4 rows for meaningful IQR
+        return rows, 0
+    
+    # Compute per-row means for each library
+    row_lib_means: Dict[str, List[Tuple[int, float]]] = {lib: [] for lib in lib_ops}
+    
+    for idx, r in enumerate(rows):
+        for lib, cols in lib_ops.items():
+            vals = [fval(r.get(c)) for c in cols]
+            vals = [v for v in vals if v is not None]
+            if vals:
+                row_lib_means[lib].append((idx, mean(vals)))
+    
+    # Determine outlier rows using IQR method per library
+    outlier_indices = set()
+    for lib, data in row_lib_means.items():
+        if len(data) < 4:
+            continue
+        
+        values = [v for _, v in data]
+        q1 = np.percentile(values, 25)
+        q3 = np.percentile(values, 75)
+        iqr = q3 - q1
+        lower_bound = q1 - multiplier * iqr
+        upper_bound = q3 + multiplier * iqr
+        
+        for idx, val in data:
+            if val < lower_bound or val > upper_bound:
+                outlier_indices.add(idx)
+    
+    # Filter out outlier rows
+    filtered = [r for i, r in enumerate(rows) if i not in outlier_indices]
+    return filtered, len(outlier_indices)
 
 
 def _norm_list(values: Optional[List[str]]) -> Optional[List[str]]:
@@ -355,19 +397,28 @@ def summarize_host(rows: List[Dict[str, str]], lib_ops: Dict[str, List[str]]) ->
     lib_means: Dict[str, Dict[str, float]] = {}
     for lib, cols in lib_ops.items():
         per_row_means: List[float] = []
+        per_row_bests: List[float] = []
         for r in rows:
             vals = [fval(r.get(c)) for c in cols]
             vals = [v for v in vals if v is not None]
             if vals:
                 per_row_means.append(mean(vals))
+                per_row_bests.append(min(vals))
         if per_row_means:
             lib_means[lib] = {
                 'mean': mean(per_row_means),
                 'median': median(per_row_means),
+                'best': min(per_row_bests),
+                'p10': float(np.percentile(per_row_means, 10)),
+                'p25': float(np.percentile(per_row_means, 25)),
+                'p75': float(np.percentile(per_row_means, 75)),
+                'p90': float(np.percentile(per_row_means, 90)),
+                'stdev': stdev(per_row_means) if len(per_row_means) > 1 else 0.0,
                 'n': len(per_row_means),
             }
 
     overall_per_row: List[float] = []
+    overall_best_per_row: List[float] = []
     for r in rows:
         vals: List[Optional[float]] = []
         for cols in lib_ops.values():
@@ -375,6 +426,21 @@ def summarize_host(rows: List[Dict[str, str]], lib_ops: Dict[str, List[str]]) ->
         flat = [v for v in vals if v is not None]
         if flat:
             overall_per_row.append(mean(flat))
+            overall_best_per_row.append(min(flat))
+
+    overall_stats = {}
+    if overall_per_row:
+        overall_stats = {
+            'overall_mean': mean(overall_per_row),
+            'overall_median': median(overall_per_row),
+            'overall_best': min(overall_best_per_row) if overall_best_per_row else None,
+            'overall_p10': float(np.percentile(overall_per_row, 10)),
+            'overall_p25': float(np.percentile(overall_per_row, 25)),
+            'overall_p75': float(np.percentile(overall_per_row, 75)),
+            'overall_p90': float(np.percentile(overall_per_row, 90)),
+            'overall_stdev': stdev(overall_per_row) if len(overall_per_row) > 1 else 0.0,
+            'overall_cv': (stdev(overall_per_row) / mean(overall_per_row) * 100) if len(overall_per_row) > 1 and mean(overall_per_row) > 0 else 0.0,
+        }
 
     return {
         'rows': len(rows),
@@ -384,8 +450,7 @@ def summarize_host(rows: List[Dict[str, str]], lib_ops: Dict[str, List[str]]) ->
         'mem_total_mean': mean(mem_total) if mem_total else None,
         'mem_avail_mean': mean(mem_avail) if mem_avail else None,
         'libs': lib_means,
-        'overall_mean': mean(overall_per_row) if overall_per_row else None,
-        'overall_median': median(overall_per_row) if overall_per_row else None,
+        **overall_stats,
     }
 
 
@@ -396,9 +461,18 @@ def relative_pct(a: Optional[float], b: Optional[float]) -> Optional[float]:
     return (a - b) / a * 100.0
 
 
-def compare_hosts(csv_path: Path, host_a: str, host_b: str) -> Dict:
+def compare_hosts(csv_path: Path, host_a: str, host_b: str, remove_outliers: bool = False) -> Dict:
     rows = load_rows(csv_path)
     buckets = filter_rows_by_hosts(rows, [host_a, host_b])
+    
+    # Remove outliers if requested
+    outliers_removed = {}
+    if remove_outliers:
+        for host in [host_a, host_b]:
+            original_count = len(buckets.get(host, []))
+            filtered, removed = remove_outliers_iqr(buckets.get(host, []), LIB_OPS)
+            buckets[host] = filtered
+            outliers_removed[host] = {'original': original_count, 'removed': removed, 'remaining': len(filtered)}
 
     # Initial summaries are recomputed later with filters; keep base here
     sum_a = summarize_host(buckets.get(host_a, []), LIB_OPS)
@@ -413,14 +487,22 @@ def compare_hosts(csv_path: Path, host_a: str, host_b: str) -> Dict:
         b_mean = sum_b.get('libs', {}).get(lib, {}).get('mean')
         rel['libs_pct'][lib] = relative_pct(a_mean, b_mean)
 
-    return {
+    # Reassemble filtered rows for by-OS analysis
+    filtered_rows = buckets.get(host_a, []) + buckets.get(host_b, [])
+    
+    result = {
         'host_a': host_a,
         'host_b': host_b,
         'summary_a': sum_a,
         'summary_b': sum_b,
         'relative': rel,
-        'rows_all': rows,
+        'rows_all': filtered_rows,  # Use filtered rows if outliers were removed
     }
+    
+    if remove_outliers and outliers_removed:
+        result['outliers_removed'] = outliers_removed
+    
+    return result
 
 
 def fmt_float(x: Optional[float], digits: int = 3) -> str:
@@ -525,9 +607,17 @@ def _print_console(report: Dict, tie_threshold_pct: float = 5.0, quiet: bool = F
         if abs(ov) < tie_threshold_pct:
             print(f"Winner: Tie (within {tie_threshold_pct:.1f}% threshold)")
         elif ov > 0:
-            print(f"Winner: {report['host_b']} (≈{ov:.2f}% faster overall)")
+            print(f"Winner: {report['host_b']} (~{ov:.2f}% faster overall)")
         else:
-            print(f"Winner: {report['host_a']} (≈{abs(ov):.2f}% faster overall)")
+            print(f"Winner: {report['host_a']} (~{abs(ov):.2f}% faster overall)")
+    
+    # Report outlier removal if applicable
+    outliers_info = report.get('outliers_removed')
+    if outliers_info:
+        print("\n== Outlier Removal (IQR Method) ==")
+        for host, stats in outliers_info.items():
+            print(f"{host}: {stats['removed']} outliers removed ({stats['remaining']}/{stats['original']} rows retained)")
+        print("")
 
     print("== Summary ==")
     if ov is None:
@@ -571,8 +661,8 @@ def _print_console(report: Dict, tie_threshold_pct: float = 5.0, quiet: bool = F
         print(f"Mem Total Mean (GB): {fmt_float(a.get('mem_total_mean'))}")
         print(f"Mem Avail Mean (GB): {fmt_float(a.get('mem_avail_mean'))}")
         for lib, stats in (a.get('libs') or {}).items():
-            print(f"{lib} mean: {fmt_float(stats.get('mean'))} | median: {fmt_float(stats.get('median'))} | n: {stats.get('n')}")
-        print(f"Overall mean: {fmt_float(a.get('overall_mean'))} | median: {fmt_float(a.get('overall_median'))}")
+            print(f"{lib} mean: {fmt_float(stats.get('mean'))} | median: {fmt_float(stats.get('median'))} | best: {fmt_float(stats.get('best'))} | n: {stats.get('n')}")
+        print(f"Overall mean: {fmt_float(a.get('overall_mean'))} | median: {fmt_float(a.get('overall_median'))} | best: {fmt_float(a.get('overall_best'))}")
 
         print("\n== Host B ==")
         print(f"Rows: {b.get('rows')}")
@@ -580,19 +670,48 @@ def _print_console(report: Dict, tie_threshold_pct: float = 5.0, quiet: bool = F
         print(f"Mem Total Mean (GB): {fmt_float(b.get('mem_total_mean'))}")
         print(f"Mem Avail Mean (GB): {fmt_float(b.get('mem_avail_mean'))}")
         for lib, stats in (b.get('libs') or {}).items():
-            print(f"{lib} mean: {fmt_float(stats.get('mean'))} | median: {fmt_float(stats.get('median'))} | n: {stats.get('n')}")
-        print(f"Overall mean: {fmt_float(b.get('overall_mean'))} | median: {fmt_float(b.get('overall_median'))}")
+            print(f"{lib} mean: {fmt_float(stats.get('mean'))} | median: {fmt_float(stats.get('median'))} | best: {fmt_float(stats.get('best'))} | n: {stats.get('n')}")
+        print(f"Overall mean: {fmt_float(b.get('overall_mean'))} | median: {fmt_float(b.get('overall_median'))} | best: {fmt_float(b.get('overall_best'))}")
 
         print("\n== Relative (who is faster) ==")
+        # Compute additional metrics
+        med_a = a.get('overall_median')
+        med_b = b.get('overall_median')
+        med_pct = relative_pct(med_a, med_b)
+        best_a = a.get('overall_best')
+        best_b = b.get('overall_best')
+        best_pct = relative_pct(best_a, best_b)
+        
         if ov is None:
-            print("Overall: N/A")
+            print("Overall (mean): N/A")
         else:
             if abs(ov) < tie_threshold_pct:
-                print(f"Overall: Tie (within {tie_threshold_pct:.1f}% threshold)")
+                print(f"Overall (mean): Tie (within {tie_threshold_pct:.1f}% threshold)")
             elif ov > 0:
-                print(f"Overall: {report['host_b']} faster by {ov:.2f}%")
+                print(f"Overall (mean): {report['host_b']} faster by {ov:.2f}%")
             else:
-                print(f"Overall: {report['host_a']} faster by {abs(ov):.2f}%")
+                print(f"Overall (mean): {report['host_a']} faster by {abs(ov):.2f}%")
+        
+        if med_pct is None:
+            print("Overall (median): N/A")
+        else:
+            if abs(med_pct) < tie_threshold_pct:
+                print(f"Overall (median): Tie (within {tie_threshold_pct:.1f}% threshold)")
+            elif med_pct > 0:
+                print(f"Overall (median): {report['host_b']} faster by {med_pct:.2f}%")
+            else:
+                print(f"Overall (median): {report['host_a']} faster by {abs(med_pct):.2f}%")
+        
+        if best_pct is None:
+            print("Overall (best): N/A")
+        else:
+            if abs(best_pct) < tie_threshold_pct:
+                print(f"Overall (best): Tie (within {tie_threshold_pct:.1f}% threshold)")
+            elif best_pct > 0:
+                print(f"Overall (best): {report['host_b']} faster by {best_pct:.2f}%")
+            else:
+                print(f"Overall (best): {report['host_a']} faster by {abs(best_pct):.2f}%")
+        
         for lib in libs_pct.keys():
             pct = libs_pct.get(lib)
             if pct is None:
@@ -609,9 +728,9 @@ def _print_console(report: Dict, tie_threshold_pct: float = 5.0, quiet: bool = F
         if abs(ov) < tie_threshold_pct:
             print(f"Winner: Tie (within {tie_threshold_pct:.1f}% threshold)")
         elif ov > 0:
-            print(f"Winner: {report['host_b']} (≈{ov:.2f}% faster)")
+            print(f"Winner: {report['host_b']} (~{ov:.2f}% faster)")
         else:
-            print(f"Winner: {report['host_a']} (≈{abs(ov):.2f}% faster)")
+            print(f"Winner: {report['host_a']} (~{abs(ov):.2f}% faster)")
 
     print("Bottom Line")
     if ov is not None:
@@ -642,15 +761,29 @@ def _print_console(report: Dict, tie_threshold_pct: float = 5.0, quiet: bool = F
         print("- Report includes per-OS and per-format (e.g., CSV, Parquet) breakdowns when both hosts have data.")
 
         print("\nKey Numbers")
-        print(f"- {report['host_a']} overall mean: {fmt_float(a.get('overall_mean'))} s")
-        print(f"- {report['host_b']} overall mean: {fmt_float(b.get('overall_mean'))} s")
+        print(f"- {report['host_a']} overall: mean {fmt_float(a.get('overall_mean'))} | median {fmt_float(a.get('overall_median'))} | best {fmt_float(a.get('overall_best'))} s")
+        print(f"- {report['host_b']} overall: mean {fmt_float(b.get('overall_mean'))} | median {fmt_float(b.get('overall_median'))} | best {fmt_float(b.get('overall_best'))} s")
         if ov is not None:
             if abs(ov) < tie_threshold_pct:
-                print(f"- Overall: Tie (within {tie_threshold_pct:.1f}% threshold)")
+                print(f"- Overall (mean): Tie (within {tie_threshold_pct:.1f}% threshold)")
             elif ov > 0:
-                print(f"- Overall: {report['host_b']} faster by {ov:.2f}%")
+                print(f"- Overall (mean): {report['host_b']} faster by {ov:.2f}%")
             else:
-                print(f"- Overall: {report['host_a']} faster by {abs(ov):.2f}%")
+                print(f"- Overall (mean): {report['host_a']} faster by {abs(ov):.2f}%")
+        if med_pct is not None:
+            if abs(med_pct) < tie_threshold_pct:
+                print(f"- Overall (median): Tie (within {tie_threshold_pct:.1f}% threshold)")
+            elif med_pct > 0:
+                print(f"- Overall (median): {report['host_b']} faster by {med_pct:.2f}%")
+            else:
+                print(f"- Overall (median): {report['host_a']} faster by {abs(med_pct):.2f}%")
+        if best_pct is not None:
+            if abs(best_pct) < tie_threshold_pct:
+                print(f"- Overall (best): Tie (within {tie_threshold_pct:.1f}% threshold)")
+            elif best_pct > 0:
+                print(f"- Overall (best): {report['host_b']} faster by {best_pct:.2f}%")
+            else:
+                print(f"- Overall (best): {report['host_a']} faster by {abs(best_pct):.2f}%")
         for lib in [l for l in ['pandas', 'polars', 'duckdb', 'fireducks'] if l in libs_pct]:
             p = libs_pct.get(lib)
             if p is None:
@@ -663,6 +796,131 @@ def _print_console(report: Dict, tie_threshold_pct: float = 5.0, quiet: bool = F
                 print(f"- {lib}: {report['host_a']} faster by {abs(p):.2f}%")
         if a.get('mem_avail_mean') is not None and b.get('mem_avail_mean') is not None:
             print(f"- Average memory available: {report['host_a']} ~ {a['mem_avail_mean']:.2f} GB; {report['host_b']} ~ {b['mem_avail_mean']:.2f} GB")
+
+        # Advanced fairness metrics
+        print("\n== Advanced Analysis ==")
+        
+        # Stability / Consistency scores
+        print("\nStability (lower CV = more consistent):")
+        cv_a = a.get('overall_cv', 0)
+        cv_b = b.get('overall_cv', 0)
+        print(f"- {report['host_a']}: CV = {cv_a:.1f}% (stdev: {fmt_float(a.get('overall_stdev'))})")
+        print(f"- {report['host_b']}: CV = {cv_b:.1f}% (stdev: {fmt_float(b.get('overall_stdev'))})")
+        if cv_a < cv_b * 0.8:
+            print(f"  → {report['host_a']} is significantly more stable")
+        elif cv_b < cv_a * 0.8:
+            print(f"  → {report['host_b']} is significantly more stable")
+        else:
+            print("  → Both hosts show similar stability")
+        
+        # Percentile comparisons (robust to outliers)
+        print("\nPercentile Comparison (more robust than mean):")
+        for pct in [10, 25, 75, 90]:
+            p_a = a.get(f'overall_p{pct}')
+            p_b = b.get(f'overall_p{pct}')
+            if p_a is not None and p_b is not None:
+                diff_pct = relative_pct(p_a, p_b)
+                if diff_pct is not None:
+                    if abs(diff_pct) < tie_threshold_pct:
+                        winner = "Tie"
+                    elif diff_pct > 0:
+                        winner = f"{report['host_b']} {abs(diff_pct):.1f}% faster"
+                    else:
+                        winner = f"{report['host_a']} {abs(diff_pct):.1f}% faster"
+                    print(f"- P{pct}: {fmt_float(p_a)} vs {fmt_float(p_b)} → {winner}")
+        
+        # OS-weighted average (fair when row counts differ)
+        by_os = report.get('by_os') or []
+        if len(by_os) > 1:
+            print("\nOS-Weighted Overall (equal weight per OS, fairer than raw mean):")
+            os_means_a = []
+            os_means_b = []
+            for os_entry in by_os:
+                sa = os_entry.get('summary_a') or {}
+                sb = os_entry.get('summary_b') or {}
+                ma = sa.get('overall_mean')
+                mb = sb.get('overall_mean')
+                if ma is not None and mb is not None:
+                    os_means_a.append(ma)
+                    os_means_b.append(mb)
+            if os_means_a and os_means_b:
+                os_weighted_a = mean(os_means_a)
+                os_weighted_b = mean(os_means_b)
+                os_weighted_pct = relative_pct(os_weighted_a, os_weighted_b)
+                print(f"- {report['host_a']}: {os_weighted_a:.3f}s")
+                print(f"- {report['host_b']}: {os_weighted_b:.3f}s")
+                if os_weighted_pct is not None:
+                    if abs(os_weighted_pct) < tie_threshold_pct:
+                        print(f"  → Tie (within {tie_threshold_pct:.1f}%)")
+                    elif os_weighted_pct > 0:
+                        print(f"  → {report['host_b']} {abs(os_weighted_pct):.1f}% faster (OS-weighted)")
+                    else:
+                        print(f"  → {report['host_a']} {abs(os_weighted_pct):.1f}% faster (OS-weighted)")
+        
+        # Memory efficiency (performance per GB available)
+        mem_a = a.get('mem_avail_mean')
+        mem_b = b.get('mem_avail_mean')
+        if mem_a and mem_b and a.get('overall_median') and b.get('overall_median'):
+            mem_eff_a = a['overall_median'] / mem_a
+            mem_eff_b = b['overall_median'] / mem_b
+            print(f"\nMemory Efficiency (time/GB, lower = better use of RAM):")
+            print(f"- {report['host_a']}: {mem_eff_a:.4f} s/GB")
+            print(f"- {report['host_b']}: {mem_eff_b:.4f} s/GB")
+            if mem_eff_a < mem_eff_b * 0.9:
+                print(f"  → {report['host_a']} uses RAM more efficiently")
+            elif mem_eff_b < mem_eff_a * 0.9:
+                print(f"  → {report['host_b']} uses RAM more efficiently")
+        
+        # Library specialization (which host is best at which library)
+        print("\nLibrary Specialization:")
+        for lib in ['pandas', 'polars', 'duckdb', 'fireducks']:
+            lib_a = a.get('libs', {}).get(lib)
+            lib_b = b.get('libs', {}).get(lib)
+            if lib_a and lib_b:
+                med_a = lib_a.get('median')
+                med_b = lib_b.get('median')
+                if med_a and med_b:
+                    diff = relative_pct(med_a, med_b)
+                    if diff is not None:
+                        if abs(diff) < tie_threshold_pct:
+                            verdict = "Tie"
+                        elif diff > 0:
+                            verdict = f"{report['host_b']} better ({abs(diff):.1f}%)"
+                        else:
+                            verdict = f"{report['host_a']} better ({abs(diff):.1f}%)"
+                        print(f"- {lib}: {verdict}")
+        
+        print("\nRecommendation:")
+        # Count wins across different metrics
+        wins_a = 0
+        wins_b = 0
+        
+        # Mean
+        if ov is not None and abs(ov) >= tie_threshold_pct:
+            if ov < 0:
+                wins_a += 1
+            else:
+                wins_b += 1
+        
+        # Median
+        if med_pct is not None and abs(med_pct) >= tie_threshold_pct:
+            if med_pct < 0:
+                wins_a += 1
+            else:
+                wins_b += 1
+        
+        # Stability
+        if cv_a < cv_b * 0.8:
+            wins_a += 1
+        elif cv_b < cv_a * 0.8:
+            wins_b += 1
+        
+        if wins_a > wins_b:
+            print(f"→ {report['host_a']} is the better overall choice for data analysis workloads")
+        elif wins_b > wins_a:
+            print(f"→ {report['host_b']} is the better overall choice for data analysis workloads")
+        else:
+            print("→ Both hosts are competitive; choose based on budget, availability, and specific library needs")
 
         print("\nInterpretation")
         a_log = a.get('cpu_logical_mean')
@@ -690,9 +948,9 @@ def _print_console(report: Dict, tie_threshold_pct: float = 5.0, quiet: bool = F
                 if abs(ov_os) < tie_threshold_pct:
                     print(f"Winner: Tie (within {tie_threshold_pct:.1f}% threshold)")
                 elif ov_os > 0:
-                    print(f"Winner: {report['host_b']} (≈{ov_os:.2f}% faster)")
+                    print(f"Winner: {report['host_b']} (~{ov_os:.2f}% faster)")
                 else:
-                    print(f"Winner: {report['host_a']} (≈{abs(ov_os):.2f}% faster)")
+                    print(f"Winner: {report['host_a']} (~{abs(ov_os):.2f}% faster)")
                 sa = os_entry.get('summary_a') or {}
                 sb = os_entry.get('summary_b') or {}
                 print(f"- Overall mean: {report['host_a']} {fmt_float(sa.get('overall_mean'))} s vs {report['host_b']} {fmt_float(sb.get('overall_mean'))} s")
@@ -721,9 +979,9 @@ def _print_console(report: Dict, tie_threshold_pct: float = 5.0, quiet: bool = F
                     if abs(ov_fmt) < tie_threshold_pct:
                         print(f"  * {title}: Tie (within {tie_threshold_pct:.1f}% threshold)")
                     elif ov_fmt > 0:
-                        print(f"  * {title}: {report['host_b']} (≈{ov_fmt:.2f}% faster)")
+                        print(f"  * {title}: {report['host_b']} (~{ov_fmt:.2f}% faster)")
                     else:
-                        print(f"  * {title}: {report['host_a']} (≈{abs(ov_fmt):.2f}% faster)")
+                        print(f"  * {title}: {report['host_a']} (~{abs(ov_fmt):.2f}% faster)")
                     sfa = fmt_entry.get('summary_a') or {}
                     sfb = fmt_entry.get('summary_b') or {}
                     print(f"    - Overall mean: {report['host_a']} {fmt_float(sfa.get('overall_mean'))} s vs {report['host_b']} {fmt_float(sfb.get('overall_mean'))} s")
@@ -757,14 +1015,17 @@ def print_report(
     libs_selected = [l for l in (libs or LIB_OPS.keys()) if l in LIB_OPS]
     lib_ops = {l: LIB_OPS[l] for l in libs_selected}
 
-    # Apply format filtering to overall rows
+    # Use summaries from result (which may have outliers removed), not recomputed from rows_all
+    a = result.get('summary_a', {})
+    b = result.get('summary_b', {})
+    
+    # Apply format filtering to overall rows for by-OS/by-format analysis
     rows_all = _filter_rows_by_formats(result.get('rows_all', []), formats)
-    rows_a_overall = [r for r in rows_all if r.get('hostname') == result['host_a']]
-    rows_b_overall = [r for r in rows_all if r.get('hostname') == result['host_b']]
-    a = summarize_host(rows_a_overall, lib_ops)
-    b = summarize_host(rows_b_overall, lib_ops)
+    
     rel = {
         'overall_mean_pct': relative_pct(a.get('overall_mean'), b.get('overall_mean')),
+        'overall_median_pct': relative_pct(a.get('overall_median'), b.get('overall_median')),
+        'overall_best_pct': relative_pct(a.get('overall_best'), b.get('overall_best')),
         'libs_pct': {l: relative_pct(a.get('libs', {}).get(l, {}).get('mean'), b.get('libs', {}).get(l, {}).get('mean')) for l in lib_ops.keys()}
     }
 
@@ -853,6 +1114,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument('--out-dir', type=Path, help='Directory for inferred output file when --json-out is omitted (default: data/results)')
     parser.add_argument('--no-export', action='store_true', help='Do not write JSON/NDJSON; print to console only')
     parser.add_argument('--force', action='store_true', help='Force recomputation (ignore any cached JSON/NDJSON report)')
+    parser.add_argument('--remove-outliers', action='store_true', help='Remove statistical outliers using IQR method (1.5x IQR) before comparison')
 
     args = parser.parse_args(argv)
     if len(args.host) != 2:
@@ -985,7 +1247,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         print("Cache: MISS (recomputing)")
 
     result = {
-        **compare_hosts(args.csv, host_a, host_b),
+        **compare_hosts(args.csv, host_a, host_b, remove_outliers=args.remove_outliers),
         # Reuse the already loaded rows to avoid reading the CSV twice.
         'rows_all': rows,
     }
@@ -999,6 +1261,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         rows_effective=rows_effective,
         source='compute',
     )
+    if args.remove_outliers:
+        meta['outliers_removed'] = True
     print_report(
         result,
         tie_threshold_pct=args.tie_threshold_pct,
