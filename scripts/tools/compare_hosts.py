@@ -601,11 +601,282 @@ def relative_pct(a: Optional[float], b: Optional[float]) -> Optional[float]:
     return (a - b) / a * 100.0
 
 
+def detect_memory_configs(rows: List[Dict[str, str]]) -> Dict[str, int]:
+    """Detect memory configuration distribution for a set of benchmark rows.
+    
+    Groups rows into memory tiers (16GB, 32GB, 48GB, 64GB+) and counts occurrences.
+    
+    Args:
+        rows: Benchmark rows for a single host
+        
+    Returns:
+        Dictionary mapping memory tier labels to row counts
+        Example: {'16GB': 8, '64GB': 19}
+    """
+    configs = {}
+    for r in rows:
+        mem_total = fval(r.get('memory_total_gb'))
+        if mem_total:
+            if mem_total < 20:
+                tier = '16GB'
+            elif mem_total < 40:
+                tier = '32GB'
+            elif mem_total < 56:
+                tier = '48GB'
+            else:
+                tier = '64GB+'
+            configs[tier] = configs.get(tier, 0) + 1
+    return configs
+
+
+def filter_similar_memory(rows_a: List[Dict[str, str]], rows_b: List[Dict[str, str]], 
+                          tolerance_gb: float = 10.0) -> Tuple[List[Dict[str, str]], List[Dict[str, str]], Dict]:
+    """Filter benchmark rows to include only those with similar memory configurations.
+    
+    Automatically identifies overlapping memory ranges between two hosts and filters
+    to ensure fair comparison. This prevents mixing low-memory and high-memory runs
+    which can severely skew results.
+    
+    CRITICAL: Handles WSL2 memory allocation correctly!
+    - WSL2 shows ~50% of physical RAM as memory_total_gb (Windows allocates half to WSL2 VM)
+    - Windows/Linux native show full physical RAM as memory_total_gb
+    - Example: 64GB machine → Windows shows 64GB, WSL2 shows 32GB
+    
+    Solution: Normalize WSL2 memory by 2x to estimate physical hardware
+    
+    Strategy:
+        1. Normalize memory: WSL2 memory_total_gb × 2, others use raw value
+        2. Calculate memory range for each host (min, max, mean)
+        3. Find overlapping range between hosts
+        4. Filter both hosts to the overlapping range ± tolerance
+        5. Track original vs normalized values for reporting
+        
+    Args:
+        rows_a: Benchmark rows for host A
+        rows_b: Benchmark rows for host B
+        tolerance_gb: Memory tolerance in GB for overlap detection (default: 10GB)
+        
+    Returns:
+        Tuple of (filtered_rows_a, filtered_rows_b, filter_info)
+        filter_info contains:
+            - applied: Boolean indicating if filtering was applied
+            - reason: Human-readable explanation
+            - wsl2_normalized: Boolean indicating if WSL2 normalization was applied
+            - original_counts: Dict with pre-filter row counts
+            - filtered_counts: Dict with post-filter row counts
+            - memory_ranges: Dict with memory statistics per host
+            
+    Example:
+        >>> rows_a = [{'memory_total_gb': '16.0'}, {'memory_total_gb': '64.0'}]
+        >>> rows_b = [{'memory_total_gb': '32.0', 'system': 'WSL2'}]  # 64GB hardware
+        >>> filtered_a, filtered_b, info = filter_similar_memory(rows_a, rows_b)
+        >>> len(filtered_a)  # Keeps 64GB row, matches WSL2's normalized 64GB
+        1
+    """
+    def normalize_memory(mem_gb: float, os_name: Optional[str]) -> float:
+        """Normalize memory to estimate physical hardware RAM.
+        
+        WSL2 typically shows ~50% of physical RAM as total memory because
+        Windows allocates only half to the WSL2 VM. We double WSL2 values
+        to estimate the physical hardware.
+        """
+        if os_name and 'WSL' in os_name.upper():
+            return mem_gb * 2.0  # WSL2: double to get estimated physical RAM
+        return mem_gb  # Native Windows/Linux: use reported value
+    
+    # Extract memory values with WSL2 normalization
+    mem_a = []
+    for i, r in enumerate(rows_a):
+        mem_raw = fval(r.get('memory_total_gb'))
+        os_name = r.get('system')
+        if mem_raw is not None:
+            mem_normalized = normalize_memory(mem_raw, os_name)
+            mem_a.append((i, mem_normalized, mem_raw, os_name))
+    
+    mem_b = []
+    for i, r in enumerate(rows_b):
+        mem_raw = fval(r.get('memory_total_gb'))
+        os_name = r.get('system')
+        if mem_raw is not None:
+            mem_normalized = normalize_memory(mem_raw, os_name)
+            mem_b.append((i, mem_normalized, mem_raw, os_name))
+    
+    if not mem_a or not mem_b:
+        return rows_a, rows_b, {'applied': False, 'reason': 'Insufficient memory data'}
+    
+    # Check if any WSL2 normalization occurred
+    wsl2_normalized = any('WSL' in (os or '').upper() for _, _, _, os in mem_a + mem_b)
+    
+    # Calculate ranges using normalized memory
+    mems_a_normalized = [m_norm for _, m_norm, _, _ in mem_a]
+    mems_b_normalized = [m_norm for _, m_norm, _, _ in mem_b]
+    
+    min_a, max_a, mean_a = min(mems_a_normalized), max(mems_a_normalized), mean(mems_a_normalized)
+    min_b, max_b, mean_b = min(mems_b_normalized), max(mems_b_normalized), mean(mems_b_normalized)
+    
+    # Check if either host has heterogeneous memory (range > tolerance)
+    range_a = max_a - min_a
+    range_b = max_b - min_b
+    
+    # Build OS/memory breakdown for reporting
+    os_mem_a = {}
+    for _, m_norm, m_raw, os in mem_a:
+        key = f"{os or 'Unknown'}"
+        if os and 'WSL' in os.upper():
+            key = f"{os} ({m_raw:.0f}GB→{m_norm:.0f}GB)"
+        else:
+            key = f"{os or 'Unknown'} ({m_norm:.0f}GB)"
+        os_mem_a.setdefault(key, []).append(m_norm)
+    
+    os_mem_b = {}
+    for _, m_norm, m_raw, os in mem_b:
+        key = f"{os or 'Unknown'}"
+        if os and 'WSL' in os.upper():
+            key = f"{os} ({m_raw:.0f}GB→{m_norm:.0f}GB)"
+        else:
+            key = f"{os or 'Unknown'} ({m_norm:.0f}GB)"
+        os_mem_b.setdefault(key, []).append(m_norm)
+    
+    # If both hosts have consistent memory, no filtering needed
+    if range_a <= tolerance_gb and range_b <= tolerance_gb:
+        # Check if they're similar enough
+        if abs(mean_a - mean_b) <= tolerance_gb:
+            info = {
+                'applied': False,
+                'reason': 'Both hosts have consistent memory configurations',
+                'wsl2_normalized': wsl2_normalized,
+                'memory_ranges': {
+                    'host_a': {'min': min_a, 'max': max_a, 'mean': mean_a, 'range': range_a},
+                    'host_b': {'min': min_b, 'max': max_b, 'mean': mean_b, 'range': range_b},
+                }
+            }
+            if wsl2_normalized:
+                info['wsl2_note'] = 'WSL2 memory normalized (×2) to estimate physical hardware. WSL2 shows ~50% of physical RAM as total memory.'
+            return rows_a, rows_b, info
+    
+    # Find overlapping range
+    overlap_min = max(min_a, min_b)
+    overlap_max = min(max_a, max_b)
+    
+    if overlap_max < overlap_min:
+        # No overlap - compare closest ranges
+        filter_info = {
+            'applied': False,
+            'reason': f'No memory overlap (Host A: {min_a:.1f}-{max_a:.1f}GB, Host B: {min_b:.1f}-{max_b:.1f}GB)',
+            'warning': 'Comparing hosts with different memory configurations - results may not be fair',
+            'wsl2_normalized': wsl2_normalized,
+            'memory_ranges': {
+                'host_a': {'min': min_a, 'max': max_a, 'mean': mean_a, 'range': range_a},
+                'host_b': {'min': min_b, 'max': max_b, 'mean': mean_b, 'range': range_b},
+            }
+        }
+        if wsl2_normalized:
+            filter_info['wsl2_note'] = 'Note: WSL2 memory was normalized (×2) but still no overlap found'
+        return rows_a, rows_b, filter_info
+    
+    # Apply filtering to overlapping range (with tolerance)
+    target_min = overlap_min - tolerance_gb
+    target_max = overlap_max + tolerance_gb
+    
+    filtered_indices_a = {i for i, m_norm, _, _ in mem_a if target_min <= m_norm <= target_max}
+    filtered_indices_b = {i for i, m_norm, _, _ in mem_b if target_min <= m_norm <= target_max}
+    
+    filtered_rows_a = [r for i, r in enumerate(rows_a) if i in filtered_indices_a]
+    filtered_rows_b = [r for i, r in enumerate(rows_b) if i in filtered_indices_b]
+    
+    # Only apply filter if it actually removes rows from at least one host
+    if len(filtered_rows_a) == len(rows_a) and len(filtered_rows_b) == len(rows_b):
+        info = {
+            'applied': False,
+            'reason': 'All rows already within overlapping memory range',
+            'wsl2_normalized': wsl2_normalized,
+            'memory_ranges': {
+                'host_a': {'min': min_a, 'max': max_a, 'mean': mean_a, 'range': range_a},
+                'host_b': {'min': min_b, 'max': max_b, 'mean': mean_b, 'range': range_b},
+            }
+        }
+        if wsl2_normalized:
+            info['wsl2_note'] = 'WSL2 memory normalized (×2) - compares physical hardware equivalents'
+        return rows_a, rows_b, info
+    
+    # Calculate new memory stats after filtering (using normalized values)
+    new_mems_a_norm = [m_norm for i, (_, m_norm, _, _) in enumerate(mem_a) if i in filtered_indices_a]
+    new_mems_b_norm = [m_norm for i, (_, m_norm, _, _) in enumerate(mem_b) if i in filtered_indices_b]
+    
+    # Track which OS/memory combinations were filtered out
+    removed_os_a = {}
+    for i, (_, m_norm, m_raw, os) in enumerate(mem_a):
+        if i not in filtered_indices_a:
+            if os and 'WSL' in os.upper():
+                key = f"{os} ({m_raw:.0f}GB, physical est: {m_norm:.0f}GB)"
+            else:
+                key = f"{os or 'Unknown'} ({m_raw:.0f}GB)"
+            removed_os_a[key] = removed_os_a.get(key, 0) + 1
+    
+    removed_os_b = {}
+    for i, (_, m_norm, m_raw, os) in enumerate(mem_b):
+        if i not in filtered_indices_b:
+            if os and 'WSL' in os.upper():
+                key = f"{os} ({m_raw:.0f}GB, physical est: {m_norm:.0f}GB)"
+            else:
+                key = f"{os or 'Unknown'} ({m_raw:.0f}GB)"
+            removed_os_b[key] = removed_os_b.get(key, 0) + 1
+    
+    filter_info = {
+        'applied': True,
+        'reason': f'Filtered to overlapping memory range: {overlap_min:.1f}-{overlap_max:.1f}GB estimated physical RAM (±{tolerance_gb}GB tolerance)',
+        'note': 'WSL2 memory normalized (×2) to estimate physical hardware. WSL2 shows ~50% of physical RAM as memory_total_gb.' if wsl2_normalized else 'Filtering based on memory_total_gb (physical hardware)',
+        'wsl2_normalized': wsl2_normalized,
+        'original_counts': {'host_a': len(rows_a), 'host_b': len(rows_b)},
+        'filtered_counts': {'host_a': len(filtered_rows_a), 'host_b': len(filtered_rows_b)},
+        'removed_counts': {
+            'host_a': len(rows_a) - len(filtered_rows_a),
+            'host_b': len(rows_b) - len(filtered_rows_b),
+        },
+        'removed_breakdown': {
+            'host_a': removed_os_a,
+            'host_b': removed_os_b,
+        },
+        'memory_ranges': {
+            'host_a': {
+                'before': {'min': min_a, 'max': max_a, 'mean': mean_a, 'range': range_a},
+                'after': {
+                    'min': min(new_mems_a_norm) if new_mems_a_norm else None,
+                    'max': max(new_mems_a_norm) if new_mems_a_norm else None,
+                    'mean': mean(new_mems_a_norm) if new_mems_a_norm else None,
+                }
+            },
+            'host_b': {
+                'before': {'min': min_b, 'max': max_b, 'mean': mean_b, 'range': range_b},
+                'after': {
+                    'min': min(new_mems_b_norm) if new_mems_b_norm else None,
+                    'max': max(new_mems_b_norm) if new_mems_b_norm else None,
+                    'mean': mean(new_mems_b_norm) if new_mems_b_norm else None,
+                }
+            }
+        },
+        'overlap_range': {'min': overlap_min, 'max': overlap_max},
+        'configs_before': {
+            'host_a': detect_memory_configs(rows_a),
+            'host_b': detect_memory_configs(rows_b),
+        },
+        'configs_after': {
+            'host_a': detect_memory_configs(filtered_rows_a),
+            'host_b': detect_memory_configs(filtered_rows_b),
+        }
+    }
+    
+    return filtered_rows_a, filtered_rows_b, filter_info
+
+
 def compare_hosts(csv_path: Path, host_a: str, host_b: str, remove_outliers: bool = False) -> Dict:
     """Compare benchmark performance between two hosts with optional outlier removal.
     
     Core comparison function that loads data, optionally removes outliers, and produces
     comprehensive host-to-host comparison including per-library and overall metrics.
+    
+    Now includes automatic memory-aware filtering to ensure fair comparisons by only
+    comparing benchmark runs with similar memory configurations.
     
     Args:
         csv_path: Path to benchmark_results.csv file
@@ -622,11 +893,16 @@ def compare_hosts(csv_path: Path, host_a: str, host_b: str, remove_outliers: boo
                 - overall_mean_pct: Overall percentage difference
                 - libs_pct: Dict of per-library percentage differences
             - rows_all: Combined filtered rows (after outlier removal if enabled)
+            - memory_filter: Information about automatic memory filtering (if applied)
             
     Note:
         When remove_outliers=True, uses IQR method with 1.5x multiplier independently
         per library. Entire rows are removed if any library shows outlier performance.
         Typical removal rate: 1-2% of data.
+        
+        Memory filtering is applied automatically when hosts have heterogeneous memory
+        configurations (e.g., mix of 16GB and 64GB runs). This ensures fair comparison
+        by only comparing runs with similar memory availability.
         
     Example:
         >>> result = compare_hosts(Path('data/results.csv'), 'HostA', 'HostB', remove_outliers=True)
@@ -636,7 +912,17 @@ def compare_hosts(csv_path: Path, host_a: str, host_b: str, remove_outliers: boo
     rows = load_rows(csv_path)
     buckets = filter_rows_by_hosts(rows, [host_a, host_b])
     
-    # Remove outliers if requested
+    # Apply automatic memory-aware filtering first (before outlier removal)
+    rows_a_orig = buckets.get(host_a, [])
+    rows_b_orig = buckets.get(host_b, [])
+    
+    rows_a_mem, rows_b_mem, memory_filter_info = filter_similar_memory(rows_a_orig, rows_b_orig)
+    
+    # Update buckets with memory-filtered rows
+    buckets[host_a] = rows_a_mem
+    buckets[host_b] = rows_b_mem
+    
+    # Remove outliers if requested (after memory filtering)
     outliers_removed = {}
     if remove_outliers:
         for host in [host_a, host_b]:
@@ -668,6 +954,7 @@ def compare_hosts(csv_path: Path, host_a: str, host_b: str, remove_outliers: boo
         'summary_b': sum_b,
         'relative': rel,
         'rows_all': filtered_rows,  # Use filtered rows if outliers were removed
+        'memory_filter': memory_filter_info,  # Information about memory filtering
     }
     
     if remove_outliers and outliers_removed:
@@ -788,6 +1075,72 @@ def _print_console(report: Dict, tie_threshold_pct: float = 5.0, quiet: bool = F
         print("\n== Outlier Removal (IQR Method) ==")
         for host, stats in outliers_info.items():
             print(f"{host}: {stats['removed']} outliers removed ({stats['remaining']}/{stats['original']} rows retained)")
+        print("")
+    
+    # Report memory filtering if applicable
+    memory_filter = report.get('memory_filter')
+    if memory_filter and memory_filter.get('applied'):
+        print("== Memory-Aware Filtering ==")
+        print(f"✓ {memory_filter.get('reason')}")
+        if memory_filter.get('note'):
+            print(f"  {memory_filter.get('note')}")
+        
+        removed_a = memory_filter.get('removed_counts', {}).get('host_a', 0)
+        removed_b = memory_filter.get('removed_counts', {}).get('host_b', 0)
+        
+        if removed_a > 0 or removed_b > 0:
+            print("\nRows removed for fair comparison:")
+            if removed_a > 0:
+                orig_a = memory_filter.get('original_counts', {}).get('host_a', 0)
+                filt_a = memory_filter.get('filtered_counts', {}).get('host_a', 0)
+                print(f"  {report['host_a']}: {removed_a} rows removed ({filt_a}/{orig_a} retained)")
+                
+                mem_before_a = memory_filter.get('memory_ranges', {}).get('host_a', {}).get('before', {})
+                mem_after_a = memory_filter.get('memory_ranges', {}).get('host_a', {}).get('after', {})
+                if mem_before_a and mem_after_a:
+                    print(f"    Physical RAM estimate before: {mem_before_a.get('min', 0):.1f}-{mem_before_a.get('max', 0):.1f} GB (mean: {mem_before_a.get('mean', 0):.1f} GB)")
+                    print(f"    Physical RAM estimate after:  {mem_after_a.get('min', 0):.1f}-{mem_after_a.get('max', 0):.1f} GB (mean: {mem_after_a.get('mean', 0):.1f} GB)")
+                
+                removed_breakdown = memory_filter.get('removed_breakdown', {}).get('host_a', {})
+                if removed_breakdown:
+                    print(f"    Removed configs: {', '.join(f'{k} ({v} rows)' for k, v in removed_breakdown.items())}")
+                
+                configs_before = memory_filter.get('configs_before', {}).get('host_a', {})
+                configs_after = memory_filter.get('configs_after', {}).get('host_a', {})
+                if configs_before != configs_after:
+                    print(f"    Memory tiers: {configs_before} → {configs_after}")
+            
+            if removed_b > 0:
+                orig_b = memory_filter.get('original_counts', {}).get('host_b', 0)
+                filt_b = memory_filter.get('filtered_counts', {}).get('host_b', 0)
+                print(f"  {report['host_b']}: {removed_b} rows removed ({filt_b}/{orig_b} retained)")
+                
+                mem_before_b = memory_filter.get('memory_ranges', {}).get('host_b', {}).get('before', {})
+                mem_after_b = memory_filter.get('memory_ranges', {}).get('host_b', {}).get('after', {})
+                if mem_before_b and mem_after_b:
+                    print(f"    Physical RAM estimate before: {mem_before_b.get('min', 0):.1f}-{mem_before_b.get('max', 0):.1f} GB (mean: {mem_before_b.get('mean', 0):.1f} GB)")
+                    print(f"    Physical RAM estimate after:  {mem_after_b.get('min', 0):.1f}-{mem_after_b.get('max', 0):.1f} GB (mean: {mem_after_b.get('mean', 0):.1f} GB)")
+                
+                removed_breakdown = memory_filter.get('removed_breakdown', {}).get('host_b', {})
+                if removed_breakdown:
+                    print(f"    Removed configs: {', '.join(f'{k} ({v} rows)' for k, v in removed_breakdown.items())}")
+                
+                configs_before = memory_filter.get('configs_before', {}).get('host_b', {})
+                configs_after = memory_filter.get('configs_after', {}).get('host_b', {})
+                if configs_before != configs_after:
+                    print(f"    Memory tiers: {configs_before} → {configs_after}")
+        print("")
+    elif memory_filter and memory_filter.get('warning'):
+        print("== Memory Configuration Warning ==")
+        print(f"⚠️  {memory_filter.get('warning')}")
+        print(f"   {memory_filter.get('reason')}")
+        if memory_filter.get('wsl2_note'):
+            print(f"   ℹ️  {memory_filter.get('wsl2_note')}")
+        print("")
+    elif memory_filter and memory_filter.get('wsl2_note'):
+        # No filtering applied, but WSL2 normalization important
+        print("== Memory Configuration Note ==")
+        print(f"ℹ️  {memory_filter.get('wsl2_note')}")
         print("")
 
     print("== Summary ==")
@@ -1254,6 +1607,14 @@ def print_report(
     }
     if meta:
         report['meta'] = meta
+    
+    # Include memory filter information
+    if 'memory_filter' in result:
+        report['memory_filter'] = result['memory_filter']
+    
+    # Include outlier removal information
+    if 'outliers_removed' in result:
+        report['outliers_removed'] = result['outliers_removed']
 
     # Build per-OS/per-format sections (independent of quiet; quiet only affects console output)
     os_list = _os_values_for_hosts(rows_all, result['host_a'], result['host_b'])
