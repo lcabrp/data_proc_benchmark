@@ -784,6 +784,22 @@ def filter_similar_memory(rows_a: List[Dict[str, str]], rows_b: List[Dict[str, s
     filtered_rows_a = [r for i, r in enumerate(rows_a) if i in filtered_indices_a]
     filtered_rows_b = [r for i, r in enumerate(rows_b) if i in filtered_indices_b]
     
+    # Skip filtering if it would eliminate all rows from either host
+    if len(filtered_rows_a) == 0 or len(filtered_rows_b) == 0:
+        filter_info = {
+            'applied': False,
+            'warning': 'Comparing hosts with different memory configurations - results may not be fair',
+            'reason': f'Memory filtering would eliminate all data from one host (overlap: {overlap_min:.1f}-{overlap_max:.1f}GB, Host A: {min_a:.1f}-{max_a:.1f}GB, Host B: {min_b:.1f}-{max_b:.1f}GB)',
+            'wsl2_normalized': wsl2_normalized,
+            'memory_ranges': {
+                'host_a': {'min': min_a, 'max': max_a, 'mean': mean_a, 'range': range_a},
+                'host_b': {'min': min_b, 'max': max_b, 'mean': mean_b, 'range': range_b},
+            }
+        }
+        if wsl2_normalized:
+            filter_info['wsl2_note'] = 'Note: WSL2 memory was normalized (×2) but filtering skipped to retain all data'
+        return rows_a, rows_b, filter_info
+    
     # Only apply filter if it actually removes rows from at least one host
     if len(filtered_rows_a) == len(rows_a) and len(filtered_rows_b) == len(rows_b):
         info = {
@@ -1098,8 +1114,13 @@ def _print_console(report: Dict, tie_threshold_pct: float = 5.0, quiet: bool = F
                 mem_before_a = memory_filter.get('memory_ranges', {}).get('host_a', {}).get('before', {})
                 mem_after_a = memory_filter.get('memory_ranges', {}).get('host_a', {}).get('after', {})
                 if mem_before_a and mem_after_a:
-                    print(f"    Physical RAM estimate before: {mem_before_a.get('min', 0):.1f}-{mem_before_a.get('max', 0):.1f} GB (mean: {mem_before_a.get('mean', 0):.1f} GB)")
-                    print(f"    Physical RAM estimate after:  {mem_after_a.get('min', 0):.1f}-{mem_after_a.get('max', 0):.1f} GB (mean: {mem_after_a.get('mean', 0):.1f} GB)")
+                    # Check if after values are not None (can happen if all rows filtered out)
+                    if mem_after_a.get('min') is not None and mem_after_a.get('max') is not None:
+                        print(f"    Physical RAM estimate before: {mem_before_a.get('min', 0):.1f}-{mem_before_a.get('max', 0):.1f} GB (mean: {mem_before_a.get('mean', 0):.1f} GB)")
+                        print(f"    Physical RAM estimate after:  {mem_after_a.get('min', 0):.1f}-{mem_after_a.get('max', 0):.1f} GB (mean: {mem_after_a.get('mean', 0):.1f} GB)")
+                    else:
+                        print(f"    Physical RAM estimate before: {mem_before_a.get('min', 0):.1f}-{mem_before_a.get('max', 0):.1f} GB (mean: {mem_before_a.get('mean', 0):.1f} GB)")
+                        print(f"    ⚠️ All rows filtered out - no matching memory configuration")
                 
                 removed_breakdown = memory_filter.get('removed_breakdown', {}).get('host_a', {})
                 if removed_breakdown:
@@ -1118,8 +1139,13 @@ def _print_console(report: Dict, tie_threshold_pct: float = 5.0, quiet: bool = F
                 mem_before_b = memory_filter.get('memory_ranges', {}).get('host_b', {}).get('before', {})
                 mem_after_b = memory_filter.get('memory_ranges', {}).get('host_b', {}).get('after', {})
                 if mem_before_b and mem_after_b:
-                    print(f"    Physical RAM estimate before: {mem_before_b.get('min', 0):.1f}-{mem_before_b.get('max', 0):.1f} GB (mean: {mem_before_b.get('mean', 0):.1f} GB)")
-                    print(f"    Physical RAM estimate after:  {mem_after_b.get('min', 0):.1f}-{mem_after_b.get('max', 0):.1f} GB (mean: {mem_after_b.get('mean', 0):.1f} GB)")
+                    # Check if after values are not None (can happen if all rows filtered out)
+                    if mem_after_b.get('min') is not None and mem_after_b.get('max') is not None:
+                        print(f"    Physical RAM estimate before: {mem_before_b.get('min', 0):.1f}-{mem_before_b.get('max', 0):.1f} GB (mean: {mem_before_b.get('mean', 0):.1f} GB)")
+                        print(f"    Physical RAM estimate after:  {mem_after_b.get('min', 0):.1f}-{mem_after_b.get('max', 0):.1f} GB (mean: {mem_after_b.get('mean', 0):.1f} GB)")
+                    else:
+                        print(f"    Physical RAM estimate before: {mem_before_b.get('min', 0):.1f}-{mem_before_b.get('max', 0):.1f} GB (mean: {mem_before_b.get('mean', 0):.1f} GB)")
+                        print(f"    ⚠️ All rows filtered out - no matching memory configuration")
                 
                 removed_breakdown = memory_filter.get('removed_breakdown', {}).get('host_b', {})
                 if removed_breakdown:
