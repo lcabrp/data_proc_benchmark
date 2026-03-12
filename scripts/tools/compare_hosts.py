@@ -225,6 +225,7 @@ def _build_meta(
     rows_effective: List[Dict[str, str]],
     source: str,
     source_report: Optional[str] = None,
+    os_filter: Optional[List[str]] = None,
 ) -> Dict:
     csv_stat = _file_stat_safe(csv_path)
     sig = {
@@ -245,6 +246,7 @@ def _build_meta(
             'formats': _norm_list(formats),
             'libs': _norm_libs_arg(libs),
             'tie_threshold_pct': float(tie_threshold_pct),
+            'os_filter': _norm_list(os_filter),
         },
         # Signature is keyed by hostname so it is orientation-agnostic.
         'signature': sig,
@@ -267,7 +269,7 @@ def _signature_matches(meta: Dict, current_sig: Dict[str, Dict[str, Optional[str
         return False
 
 
-def _args_match(meta: Dict, formats: Optional[List[str]], libs: Optional[List[str]], tie_threshold_pct: float) -> bool:
+def _args_match(meta: Dict, formats: Optional[List[str]], libs: Optional[List[str]], tie_threshold_pct: float, os_filter: Optional[List[str]] = None) -> bool:
     try:
         a = meta.get('args') or {}
         if _norm_list(a.get('formats')) != _norm_list(formats):
@@ -275,6 +277,8 @@ def _args_match(meta: Dict, formats: Optional[List[str]], libs: Optional[List[st
         if _norm_libs_arg(a.get('libs')) != _norm_libs_arg(libs):
             return False
         if float(a.get('tie_threshold_pct')) != float(tie_threshold_pct):
+            return False
+        if _norm_list(a.get('os_filter')) != _norm_list(os_filter):
             return False
         return True
     except Exception:
@@ -885,7 +889,7 @@ def filter_similar_memory(rows_a: List[Dict[str, str]], rows_b: List[Dict[str, s
     return filtered_rows_a, filtered_rows_b, filter_info
 
 
-def compare_hosts(csv_path: Path, host_a: str, host_b: str, remove_outliers: bool = False) -> Dict:
+def compare_hosts(csv_path: Path, host_a: str, host_b: str, remove_outliers: bool = False, rows: Optional[List[Dict[str, str]]] = None) -> Dict:
     """Compare benchmark performance between two hosts with optional outlier removal.
     
     Core comparison function that loads data, optionally removes outliers, and produces
@@ -900,6 +904,8 @@ def compare_hosts(csv_path: Path, host_a: str, host_b: str, remove_outliers: boo
         host_b: Second hostname (comparison)
         remove_outliers: If True, applies IQR-based outlier removal to both hosts.
                         Default False for backward compatibility, but tool default is True.
+        rows: Optional pre-loaded and pre-filtered rows. If provided, skips loading from CSV.
+              This allows callers (e.g. main() with --os filter) to pass already-filtered data.
         
     Returns:
         Dictionary containing:
@@ -925,10 +931,38 @@ def compare_hosts(csv_path: Path, host_a: str, host_b: str, remove_outliers: boo
         >>> print(result['relative']['overall_mean_pct'])
         35.2  # HostB is 35.2% faster
     """
-    rows = load_rows(csv_path)
+    if rows is None:
+        rows = load_rows(csv_path)
     buckets = filter_rows_by_hosts(rows, [host_a, host_b])
     
-    # Apply automatic memory-aware filtering first (before outlier removal)
+    # Automatic OS intersection filtering: only compare OS environments shared by both hosts.
+    # This prevents asymmetric data (e.g., Host A has Linux+WSL2+Windows but Host B only has
+    # WSL2+Windows) from skewing the overall comparison.
+    rows_a_pre = buckets.get(host_a, [])
+    rows_b_pre = buckets.get(host_b, [])
+    os_a = {r.get('system') for r in rows_a_pre if r.get('system')}
+    os_b = {r.get('system') for r in rows_b_pre if r.get('system')}
+    common_os = os_a & os_b
+    excluded_os = (os_a | os_b) - common_os
+    
+    os_filter_info = {
+        'applied': bool(excluded_os),
+        'host_a_os': sorted(os_a),
+        'host_b_os': sorted(os_b),
+        'common_os': sorted(common_os),
+        'excluded_os': sorted(excluded_os),
+    }
+    if excluded_os:
+        os_filter_info['reason'] = (
+            f"Excluded OS environments not shared by both hosts: {sorted(excluded_os)}. "
+            f"Comparison restricted to: {sorted(common_os)}"
+        )
+        buckets[host_a] = [r for r in rows_a_pre if r.get('system') in common_os]
+        buckets[host_b] = [r for r in rows_b_pre if r.get('system') in common_os]
+    else:
+        os_filter_info['reason'] = "Both hosts share the same OS environments"
+    
+    # Apply automatic memory-aware filtering (after OS intersection, before outlier removal)
     rows_a_orig = buckets.get(host_a, [])
     rows_b_orig = buckets.get(host_b, [])
     
@@ -971,6 +1005,7 @@ def compare_hosts(csv_path: Path, host_a: str, host_b: str, remove_outliers: boo
         'relative': rel,
         'rows_all': filtered_rows,  # Use filtered rows if outliers were removed
         'memory_filter': memory_filter_info,  # Information about memory filtering
+        'os_intersection_filter': os_filter_info,  # Information about OS intersection filtering
     }
     
     if remove_outliers and outliers_removed:
@@ -1638,6 +1673,10 @@ def print_report(
     if 'memory_filter' in result:
         report['memory_filter'] = result['memory_filter']
     
+    # Include OS intersection filter information
+    if 'os_intersection_filter' in result:
+        report['os_intersection_filter'] = result['os_intersection_filter']
+    
     # Include outlier removal information
     if 'outliers_removed' in result:
         report['outliers_removed'] = result['outliers_removed']
@@ -1767,6 +1806,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument('--no-export', action='store_true', help='Do not write JSON/NDJSON; print to console only')
     parser.add_argument('--force', action='store_true', help='Force recomputation (ignore any cached JSON/NDJSON report)')
     parser.add_argument('--keep-outliers', action='store_true', help='Keep statistical outliers (by default, outliers are removed using IQR method)')
+    parser.add_argument('--os', nargs='+', dest='os_filter', help='Restrict to these OS environments (e.g., Windows WSL2). Case-sensitive. Common values: Windows, Linux, WSL2')
 
     args = parser.parse_args(argv)
     if len(args.host) != 2:
@@ -1782,6 +1822,12 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     # Load rows once
     rows = load_rows(args.csv)
+
+    # Pre-filter rows by OS environment if requested
+    if args.os_filter:
+        allowed_os = {x.strip() for x in args.os_filter}
+        rows = [r for r in rows if r.get('system', '') in allowed_os]
+
     hostnames = sorted({r.get('hostname') for r in rows if r.get('hostname')})
     missing = [h for h in (host_a, host_b) if h not in hostnames]
     if missing:
@@ -1801,7 +1847,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         if args.json_out is None:
             ext = 'ndjson' if args.ndjson else 'json'
             default_dir = args.out_dir if args.out_dir else Path('data/results')
-            args.json_out = default_dir / f"compare_{host_a}_vs_{host_b}.{ext}"
+            os_suffix = '_os_' + '_'.join(sorted(args.os_filter)) if args.os_filter else ''
+            args.json_out = default_dir / f"compare_{host_a}_vs_{host_b}{os_suffix}.{ext}"
 
     # Cache lookup (use existing report when inputs/measurements haven't changed)
     # Cache is keyed by: hosts (unordered), formats, libs, tie-threshold, and a lightweight signature of the
@@ -1851,7 +1898,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             meta = rep.get('meta')
             if not meta:
                 continue
-            if not _args_match(meta, args.formats, libs, args.tie_threshold_pct):
+            if not _args_match(meta, args.formats, libs, args.tie_threshold_pct, args.os_filter):
                 continue
             if not _signature_matches(meta, current_sig):
                 continue
@@ -1868,6 +1915,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 rows_effective=rows_effective,
                 source='cache',
                 source_report=str(c),
+                os_filter=args.os_filter,
             )
 
             print(f"Cache: HIT (reusing {c})")
@@ -1899,7 +1947,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         print("Cache: MISS (recomputing)")
 
     result = {
-        **compare_hosts(args.csv, host_a, host_b, remove_outliers=not args.keep_outliers),
+        **compare_hosts(args.csv, host_a, host_b, remove_outliers=not args.keep_outliers, rows=rows),
         # Reuse the already loaded rows to avoid reading the CSV twice.
         'rows_all': rows,
     }
@@ -1912,6 +1960,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         tie_threshold_pct=args.tie_threshold_pct,
         rows_effective=rows_effective,
         source='compute',
+        os_filter=args.os_filter,
     )
     if not args.keep_outliers:
         meta['outliers_removed'] = True
