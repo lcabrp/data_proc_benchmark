@@ -1,0 +1,52 @@
+hostname,cpu_brand,memory_total_gb
+Inspiron3030S,Intel(R) Core(TM) i7-14700,63.7
+OptPlex-7010-1,13th Gen Intel(R) Core(TM) i9-13900,63.7
+HP-Z2-G9,12th Gen Intel(R) Core(TM) i9-12900,127.71
+VivoBook-01,13th Gen Intel(R) Core(TM) i9-13900H,15.63
+HP-EB840G8-01,11th Gen Intel(R) Core(TM) i7-1185G7 @ 3.00GHz,63.69
+HP-EB830G8-01,11th Gen Intel(R) Core(TM) i5-1145G7 @ 2.60GHz,15.69
+TS-P350-01,11th Gen Intel(R) Core(TM) i7-11700 @ 2.50GHz,31.67
+WL5040,AMD Ryzen 9 8945HS w/ Radeon 780M Graphics,31.28
+EB01LM,Intel(R) Core(TM) i7-7600U CPU @ 2.80GHz,15.5
+HP-EB1030G2-UB,Intel(R) Core(TM) i7-7600U CPU @ 2.80GHz,15.88
+HP-EB-ZorinOS,Intel(R) Core(TM) i7-7600U CPU @ 2.80GHz,15.5
+HP-EB830G6-01,Intel(R) Core(TM) i5-8365U CPU @ 1.60GHz,31.81
+HP-EB830G6-02,Intel(R) Core(TM) i7-8665U CPU @ 1.90GHz,31.81
+HeliosNeo16S,Intel(R) Core(TM) Ultra 9 275HX,15.34
+Legion7-16IRX9,Intel(R) Core(TM) i9-14900HX,31.2
+IdeaPadPro5i,Intel(R) Core(TM) Ultra 9 185H,31.61
+DELL-XPS15-9510,11th Gen Intel(R) Core(TM) i7-11800H @ 2.30GHz,63.73
+ZBookStudioG8,11th Gen Intel(R) Core(TM) i7-11850H @ 2.50GHz,31.72
+WL1030,Intel(R) Core(TM) i7-8665U CPU @ 1.90GHz,63.82
+ROG-Strix-G17,AMD Ryzen 9 7945HX with Radeon Graphics,31.21
+HP-EB-G6-SJ,Intel(R) Core(TM) i5-8365U CPU @ 1.60GHz,63.82
+Legion7-16ARX8H,AMD Ryzen 9 7945HX with Radeon Graphics,31.19
+ROG-Strix-G16,AMD Ryzen 9 9955HX 16-Core Processor,61.68
+IdeaPadS340,Intel(R) Core(TM) i7-1065G7 CPU @ 1.30GHz,19.78
+ZBookStudioG8-UB,11th Gen Intel(R) Core(TM) i7-11850H @ 2.50GHz,31.06
+Legion5-15IRX10,Intel(R) Core(TM) i7-14700HX,15.73
+ZBookFuryG8,11th Gen Intel(R) Core(TM) i9-11900H @ 2.50GHz,63.67
+OptPlex-7010-2,13th Gen Intel(R) Core(TM) i5-13500,63.7
+ZBookFuryG8-17,11th Gen Intel(R) Core(TM) i7-11850H @ 2.50GHz,31.67
+LnvThkCtr-01,12th Gen Intel(R) Core(TM) i7-12700T,23.69
+Legion5-15AHP10,AMD Ryzen 7 260 w/ Radeon 780M Graphics,15.31
+ECT1250-AMZN,Intel(R) Core(TM) Ultra 7 265,31.46
+MSI-VectorA16HX,AMD Ryzen 9 8940HX with Radeon Graphics,15.17
+ZBookFuryG9,12th Gen Intel(R) Core(TM) i7-12850HX,63.61
+ThinkPadE16G2,AMD Ryzen 7 7735HS with Radeon Graphics,30.78
+E32-PC,Intel(R) Core(TM) i5-4670 CPU @ 3.40GHz,15.89
+LnvTCi5-12400,12th Gen Intel(R) Core(TM) i5-12400,63.72
+DELL-XPS15-9530,13th Gen Intel(R) Core(TM) i9-13900H,31.68
+OptPlexMicro-7020,Intel(R) Core(TM) i5-14600,15.69
+ThinkBook,Intel(R) Core(TM) Ultra 7 255H,63.49
+OptPlex-7020-1,Intel(R) Core(TM) i5-14500,15.69
+Precision-7770,12th Gen Intel(R) Core(TM) i7-12850HX,31.76
+Precision-7670,12th Gen Intel(R) Core(TM) i9-12950HX,31.69
+HP-ProMini400,Intel(R) Core(TM) i5-14500T,63.68
+DELL-XPS-9520,12th Gen Intel(R) Core(TM) i7-12700H,63.68
+ZBookPowerG9,12th Gen Intel(R) Core(TM) i7-12700H,63.65
+VivoBookPro,13th Gen Intel(R) Core(TM) i9-13980HX,63.64
+OptPlex-7020-2,Intel(R) Core(TM) i5-14600,63.69
+Legion5-16IAX10,Intel(R) Core(TM) Ultra 9 275HX,30.78
+OptPlex-7020-3,Intel(R) Core(TM) i5-14600,63.69
+HP-Envy-17,13th Gen Intel(R) Core(TM) i7-13700H,63.72
