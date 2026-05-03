@@ -233,18 +233,18 @@ python scripts/benchmark/compare_hosts.py
 
 ### Compare Hosts Usage
 
-```bash
-# Basic comparison (all CSV files in current directory)
-python scripts/benchmark/compare_hosts.py
+**Script Path**: `scripts/tools/compare_hosts.py`
+**Important**: ALWAYS use `uv run` to execute scripts. When running in Windows PowerShell, set the encoding to UTF-8 to prevent emoji character crashes.
 
-# With outlier removal (recommended)
-python scripts/benchmark/compare_hosts.py --remove-outliers
+```powershell
+# Basic comparison (requires --csv and two --host flags)
+$env:PYTHONIOENCODING="utf-8"; uv run scripts/tools/compare_hosts.py --csv data/benchmark_results.csv --host <HostA> --host <HostB>
 
-# Specify CSV files explicitly
-python scripts/benchmark/compare_hosts.py benchmark1.csv benchmark2.csv
+# With outlier removal disabled (they are removed by default via IQR)
+$env:PYTHONIOENCODING="utf-8"; uv run scripts/tools/compare_hosts.py --csv data/benchmark_results.csv --host <HostA> --host <HostB> --keep-outliers
 
-# Custom multiplier for outlier detection
-python scripts/benchmark/compare_hosts.py --remove-outliers --iqr-multiplier 2.0
+# Quick comparison (Summary & Verdict only)
+$env:PYTHONIOENCODING="utf-8"; uv run scripts/tools/compare_hosts.py --csv data/benchmark_results.csv --host <HostA> --host <HostB> --quiet
 ```
 
 **Output:**
