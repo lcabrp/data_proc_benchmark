@@ -214,5 +214,5 @@ data/processed/*.*son
 data/raw/*10M.parquet
 
 # Exclude comprisons
-data/results/compare*.*
-data/custom_results/compare*.*
+#data/results/compare*.*
+#data/custom_results/compare*.*
