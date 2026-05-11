@@ -3,10 +3,24 @@ import json
 import sys
 import os
 
-target = "IdeaPadPro5i-2"
+target = "Precision-7680"
 compare_to = [
-    "Legion7-16IRX9",
-    "IdeaPadPro5i"
+     "Legion7-16IRX9",
+     "IdeaPadPro5i",
+    "IdeaPadPro5i-2",
+    "HP-ZB-Fury-G10",
+    "HP-Envy-17",
+    "ZBookPowerG9",
+    "VivoBookPro",
+    "Precision-7670",
+    "Precision-7770",
+    "ZBookFuryG9",
+    "MSI-VectorA16HX",
+    "DELL-XPS15-9530",
+    "ROG-Strix-G16",
+    "ROG-Strix-G17",
+    "DELL-XPS-9520",
+    "Legion5-15AHP10"
 ]
 
 results = []
@@ -48,12 +62,12 @@ for host in compare_to:
         h_mean = host_sum.get("overall_mean", 0)
         
         tie_thresh = data.get("tie_threshold_pct", 5.0)
-        if pct < tie_thresh:
+        if abs(pct) < tie_thresh:
             winner = "Tie"
         elif t_mean < h_mean:
-            winner = target
+            winner = target  # target (Precision-7680) has lower mean time → faster
         else:
-            winner = host
+            winner = host  # compared host has lower mean time → faster
             
         results.append({
             "host": host,
@@ -70,15 +84,29 @@ for host in compare_to:
 
 for r in results:
     print(f"--- {r['host']} vs {target} ---")
-    diff_str = f"{r['percent_diff']:.2f}%" if r['percent_diff'] is not None else "N/A"
+    pct = r['percent_diff']
+    abs_pct = abs(pct) if pct is not None else None
+    diff_str = f"{abs_pct:.2f}%" if abs_pct is not None else "N/A"
     print(f"Host CPU: {r['host_cpu']} | RAM: {r['host_ram']:.1f}GB")
     print(f"Target CPU: {r['target_cpu']} | RAM: {r['target_ram']:.1f}GB")
-    print(f"Winner: {r['winner']} by {diff_str}")
+    # pct = (Precision_mean - host_mean) / Precision_mean * 100
+    # positive → host is faster; negative → host is slower
+    if r['winner'] == "Tie":
+        direction = f"Tie (within {diff_str})"
+    elif pct is not None and pct > 0:
+        direction = f"{r['host']} is faster by {diff_str}"
+    else:
+        direction = f"{target} is faster by {diff_str}"
+    print(f"Winner: {direction}")
     
     libs_pct = r['data'].get("overall", {}).get("relative", {}).get("libs_pct", {})
     if libs_pct:
-        print(f"  Pandas diff: {libs_pct.get('pandas', 0):.2f}%")
-        print(f"  Polars diff: {libs_pct.get('polars', 0):.2f}%")
-        print(f"  DuckDB diff: {libs_pct.get('duckdb', 0):.2f}%")
+        # positive diff → host is faster; negative diff → host is slower
+        def fmt_lib(v):
+            if v is None: return "N/A"
+            return f"{'+' if v >= 0 else ''}{v:.2f}% ({'host faster' if v > 0 else 'host slower' if v < 0 else 'same'})"
+        print(f"  Pandas diff: {fmt_lib(libs_pct.get('pandas'))}")
+        print(f"  Polars diff: {fmt_lib(libs_pct.get('polars'))}")
+        print(f"  DuckDB diff: {fmt_lib(libs_pct.get('duckdb'))}")
     
     print("")
