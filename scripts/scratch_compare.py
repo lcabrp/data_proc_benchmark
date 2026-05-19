@@ -3,24 +3,18 @@ import json
 import sys
 import os
 
-target = "Precision-7680"
+target = "HP-ZB-G9-02"
 compare_to = [
      "Legion7-16IRX9",
      "IdeaPadPro5i",
     "IdeaPadPro5i-2",
-    "HP-ZB-Fury-G10",
     "HP-Envy-17",
     "ZBookPowerG9",
-    "VivoBookPro",
     "Precision-7670",
     "Precision-7770",
+    "Precision-7680",
     "ZBookFuryG9",
-    "MSI-VectorA16HX",
-    "DELL-XPS15-9530",
-    "ROG-Strix-G16",
-    "ROG-Strix-G17",
-    "DELL-XPS-9520",
-    "Legion5-15AHP10"
+    "DELL-XPS15-9530"
 ]
 
 results = []
