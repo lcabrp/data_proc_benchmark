@@ -102,6 +102,7 @@ Key internal functions added:
     - Pandas / Modin: replaced materializing an aggregated summary + merge with in‑place `groupby().transform(...)` assignments (sum/mean metrics + rank). Eliminates an intermediate wide join DataFrame.
     - Polars: replaced join-based enrichment with a single lazy pipeline applying window functions (`sum().over()`, `mean().over()`, `rank().over()`) followed by top‑N filter before `.collect()`. Reduces materialization and leverages predicate pruning.
     - DuckDB path unchanged (SQL window plan already efficient).
+    - Polars timeseries now optimizes UTF-8 timestamp columns by extracting the hour with `str.slice(11, 2).cast(pl.UInt8)` instead of parsing full timestamps for every row, while still falling back to `.dt.hour()` for native datetime columns.
 
 3. **Result Trimming (Optional Behavior)**
     - For complex join, only top‑ranked rows (bytes_rank ≤ 10) materialized, limiting large intermediate outputs retained in Python space.
@@ -547,6 +548,58 @@ Recent benchmarking reveals significant performance advantages when using column
 Task has X.XX GiB worth of input dependencies, but worker has memory_limit set to Y.YY GiB
 ```
 **Solution**: The v1 implementation automatically handles this with adaptive fallback
+
+#### DuckDB Complex Join Failures in WSL2
+
+DuckDB's complex join benchmark can need more memory than WSL2 exposes by default. Microsoft documents WSL2's default VM memory allocation as 50% of total Windows memory, with optional disk-backed swap configured through `%UserProfile%\.wslconfig`: https://learn.microsoft.com/en-us/windows/wsl/wsl-config
+
+If DuckDB fails in WSL2 during `complex_join`, add or update `C:\Users\<your_windows_user>\.wslconfig`:
+
+```ini
+[wsl2]
+
+# Extra disk-backed memory for high-memory DuckDB operations.
+swap=32GB
+
+# Optional: choose a fixed swap VHDX location.
+# Make sure the folder exists and the drive has enough free space.
+swapFile=D:/WSL/wsl-swap.vhdx
+
+# Optional: on WSL builds where memory=0 removes the VM cap, this lets
+# WSL grow beyond the default half-RAM allocation. If it is ignored on
+# your system, use an explicit cap such as memory=48GB instead.
+memory=0
+
+localhostForwarding=true
+```
+
+After changing `.wslconfig`, restart WSL from PowerShell:
+
+```powershell
+wsl --shutdown
+```
+
+Then reopen the distro and confirm the new limits from inside WSL:
+
+```bash
+free -h
+```
+
+The benchmark scripts create and use a DuckDB temp/spill directory automatically:
+
+- Windows: under `%TEMP%\data-proc-benchmark-duckdb`
+- WSL/Linux: under `/tmp/data-proc-benchmark-duckdb`
+
+You do not need to export environment variables on every PC. Use these only when you want to override the defaults for a specific test:
+
+```sql
+SET preserve_insertion_order = false;
+SET threads = 4;
+SET temp_directory = '/tmp/data-proc-benchmark-duckdb';
+SET max_temp_directory_size = '32GB';
+```
+
+Do not use `SET memory_limit = '0'`. In DuckDB 1.3.2 this is a parser error, and DuckDB's OOM guide recommends reducing `memory_limit` below the default 80% of RAM when the OS kills the process because some allocations are outside the buffer manager. If needed, set an explicit limit such as `SET memory_limit = '12GB'` or about 50-60% of the memory shown by `free -h`.
 
 #### FireDucks Import Issues on Windows
 ```

@@ -271,6 +271,8 @@ TIMESERIES Operation:
   modin     :  37.55s (x0.1)
 ```
 
+> Note: Polars now uses a fast string-slice hour extraction path when the timestamp column is UTF-8 text, with a fallback to `.dt.hour()` for native datetime data.
+
 ## 🎛️ Available Benchmark Scripts
 
 | Script | Purpose | Best For |
