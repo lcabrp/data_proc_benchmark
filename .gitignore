@@ -213,6 +213,13 @@ data/raw/*.*son
 data/processed/*.*son
 data/raw/*10M.parquet
 
+# Generated benchmark probe and cache files
+data/benchmark_probe_8M.csv
+data/benchmark_probe_8M_cached.csv
+data/benchmark_results_archived_*.csv
+data/benchmark_results_pre_*.csv
+data/cache/
+
 # Exclude comprisons
 #data/results/compare*.*
 #data/custom_results/compare*.*

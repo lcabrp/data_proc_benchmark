@@ -6,7 +6,6 @@ import duckdb
 import warnings
 import sys
 import os
-import csv
 import gzip
 import json
 import argparse
@@ -24,16 +23,45 @@ warnings.filterwarnings("ignore", category=SyntaxWarning, message=r"invalid esca
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, project_root)
 
-from utils.host_info import get_host_info
-from utils.config import setup_project
-from utils.data_io import get_dataset_size as universal_dataset_size
-from utils.useful_functions import optimize_df_types  
-from utils.platform_utils import FIREDUCKS_AVAILABLE  
+from utils.host_info import get_host_info  # noqa: E402
+from utils.config import setup_project  # noqa: E402
+from utils.data_io import get_dataset_size as universal_dataset_size  # noqa: E402
+from utils.benchmark_prep import (  # noqa: E402
+    PREP_COLUMNS,
+    append_csv_row_with_schema,
+    get_prep_csv_values,
+    load_pandas_like_for_benchmark,
+    print_prep_timing,
+    record_prep_timing,
+    reset_prep_timings,
+)
+from utils.duckdb_utils import DuckDBBenchmarkSource, duckdb_table_expr  # noqa: E402
+from utils.useful_functions import optimize_df_types  # noqa: E402
+from utils.platform_utils import FIREDUCKS_AVAILABLE  # noqa: E402
 
 if FIREDUCKS_AVAILABLE:
     import fireducks.pandas as fpd
 else:
     fpd = None
+
+def _print_prep_timing(library: str, step: str, start_time: float) -> None:
+    """Print elapsed time for a dataset preparation step."""
+    print_prep_timing(library, step, start_time)
+
+
+BENCHMARK_OPTIMIZATION_TYPES = {
+    'datetime64[ns]': ['timestamp'],
+    'category': ['source_ip', 'destination_ip', 'protocol', 'event_type',
+                 'severity', 'user', 'status_code', 'country', 'device_type'],
+    'uint32': ['bytes', 'session_id'],
+    'uint16': ['response_time_ms', 'port'],
+    'float32': ['risk_score']
+}
+PREP_MEMORY_REPORT = "off"
+OPTIMIZED_CACHE_MODE = "off"
+OPTIMIZED_CACHE_DIR = Path(project_root) / "data" / "cache" / "optimized"
+USE_CSV_DTYPE_HINTS = True
+DUCKDB_SOURCE = DuckDBBenchmarkSource()
 
 # File format detection and universal reading functions
 def detect_file_format(file_path: Path) -> str:
@@ -162,37 +190,26 @@ def optimize_benchmark_df(bdf: pd.DataFrame) -> pd.DataFrame:
     Apply custom dtype optimization rules for memory efficiency.
     Matches benchmark.py optimizations.
     """
-    new_dict_types = {
-        'datetime64[ns]': ['timestamp'],
-        'category': ['source_ip', 'destination_ip', 'protocol', 'event_type',
-                     'severity', 'user', 'status_code', 'country', 'device_type'],
-        'uint32': ['bytes', 'session_id'],
-        'uint16': ['response_time_ms', 'port'],
-        'float32': ['risk_score']
-    }
-    return optimize_df_types(bdf, new_dict_types)
+    return optimize_df_types(bdf, BENCHMARK_OPTIMIZATION_TYPES)
 
 def load_and_optimize_pandas(csv_path: str) -> pd.DataFrame:
     """
     Load and optimize pandas DataFrame once.
     """
-    if csv_path.endswith('.parquet'):
-        df = pd.read_parquet(csv_path)
-    else:
-        df = pd.read_csv(csv_path)
-    
-    try:
-        original_memory = df.memory_usage(deep=True).sum()
-        opt = optimize_benchmark_df(df)
-        optimized_memory = opt.memory_usage(deep=True).sum()
-        memory_reduction = (original_memory - optimized_memory) / original_memory * 100
-        print(f"  pandas DataFrame optimized: {memory_reduction:.1f}% memory reduction ({original_memory/1024/1024:.1f}MB → {optimized_memory/1024/1024:.1f}MB)")
-        del df
-        gc.collect()
-        return opt
-    except Exception as e:
-        print(f"Warning: Optimization failed: {e}")
-        return df
+    df = load_pandas_like_for_benchmark(
+        Path(csv_path),
+        library="pandas",
+        type_map=BENCHMARK_OPTIMIZATION_TYPES,
+        should_optimize=True,
+        prep_memory_report=PREP_MEMORY_REPORT,
+        optimized_cache_mode=OPTIMIZED_CACHE_MODE,
+        optimized_cache_dir=OPTIMIZED_CACHE_DIR,
+        use_dtype_hints=USE_CSV_DTYPE_HINTS,
+    )
+    step_start = time.perf_counter()
+    gc.collect()
+    _print_prep_timing("pandas", "gc after optimization", step_start)
+    return df
 
 def _read_polars(path: str) -> pl.DataFrame:
     """
@@ -219,22 +236,20 @@ def load_and_optimize_fireducks(csv_path: str) -> pd.DataFrame:
     """
     if not FIREDUCKS_AVAILABLE:
         raise RuntimeError("FireDucks not available")
-    if csv_path.endswith('.parquet'):
-        df = fpd.read_parquet(csv_path)
-    else:
-        df = fpd.read_csv(csv_path)
-    try:
-        original = df.memory_usage(deep=True).sum()
-        opt = optimize_benchmark_df(df)
-        optimized = opt.memory_usage(deep=True).sum()
-        red = (original - optimized) / original * 100 if original > 0 else 0
-        print(f"  fireducks DataFrame optimized: {red:.1f}% memory reduction ({original/1024/1024:.1f}MB → {optimized/1024/1024:.1f}MB)")
-        del df
-        gc.collect()
-        return opt
-    except Exception as e:
-        print(f"Warning: FireDucks optimization failed: {e}")
-        return df
+    df = load_pandas_like_for_benchmark(
+        Path(csv_path),
+        library="fireducks",
+        type_map=BENCHMARK_OPTIMIZATION_TYPES,
+        should_optimize=True,
+        prep_memory_report=PREP_MEMORY_REPORT,
+        optimized_cache_mode=OPTIMIZED_CACHE_MODE,
+        optimized_cache_dir=OPTIMIZED_CACHE_DIR,
+        use_dtype_hints=USE_CSV_DTYPE_HINTS,
+    )
+    step_start = time.perf_counter()
+    gc.collect()
+    _print_prep_timing("fireducks", "gc after optimization", step_start)
+    return df
 
 # Helper functions for single-load caching
 def run_pandas_operation(func: Callable[[pd.DataFrame], Any],
@@ -268,19 +283,22 @@ def run_polars_operation(func: Callable[[pl.DataFrame], Any],
 def run_duckdb_operation(operation_func: Callable, csv_path: str) -> Any:
     """Execute DuckDB operation with proper connection management."""
     try:
-        conn = duckdb.connect(":memory:")
-        result = operation_func(csv_path, conn)
-        conn.close()
-        return result
+        with DUCKDB_SOURCE.query(csv_path) as (conn, source):
+            return operation_func(source, conn)
     except Exception as e:
         print(f"DuckDB operation failed: {e}")
         return None
 
+
+def _duckdb_source(path_or_expr: str) -> str:
+    if path_or_expr == DUCKDB_SOURCE.table_name or path_or_expr.startswith("read_"):
+        return path_or_expr
+    return duckdb_table_expr(path_or_expr)
+
 def duckdb_filter_group(csv_path: str, cached_df: Optional[Any] = None) -> pd.DataFrame:
     """Filter bytes > 1000, group by event_type, count. (cached_df unused for consistency)"""
     def operation(path: str, conn: duckdb.DuckDBPyConnection) -> pd.DataFrame:
-        fmt = detect_file_format(Path(path))
-        source = f"read_parquet('{path}')" if fmt == 'parquet' else f"read_csv_auto('{path}')"
+        source = _duckdb_source(path)
         return conn.execute(f"""
             SELECT event_type, COUNT(*) AS count
             FROM {source}
@@ -292,8 +310,7 @@ def duckdb_filter_group(csv_path: str, cached_df: Optional[Any] = None) -> pd.Da
 def duckdb_statistics(csv_path: str, cached_df: Optional[Any] = None) -> pd.DataFrame:
     """Group by event_type, mean/min/max for bytes, response_time_ms, risk_score. (cached_df unused for consistency)"""
     def operation(path: str, conn: duckdb.DuckDBPyConnection) -> pd.DataFrame:
-        fmt = detect_file_format(Path(path))
-        source = f"read_parquet('{path}')" if fmt == 'parquet' else f"read_csv_auto('{path}')"
+        source = _duckdb_source(path)
         return conn.execute(f"""
             SELECT event_type,
                    AVG(bytes) AS bytes_mean, MIN(bytes) AS bytes_min, MAX(bytes) AS bytes_max,
@@ -311,8 +328,7 @@ def duckdb_statistics(csv_path: str, cached_df: Optional[Any] = None) -> pd.Data
 def duckdb_complex_join(csv_path: str, cached_df: Optional[Any] = None) -> pd.DataFrame:
     """Sum bytes by source_ip, join back, rank by total_bytes per event_type, top 10. (cached_df unused for consistency)"""
     def operation(path: str, conn: duckdb.DuckDBPyConnection) -> pd.DataFrame:
-        fmt = detect_file_format(Path(path))
-        source = f"read_parquet('{path}')" if fmt == 'parquet' else f"read_csv_auto('{path}')"
+        source = _duckdb_source(path)
         return conn.execute(f"""
             WITH summary AS (
                 SELECT source_ip, SUM(bytes) AS total_bytes
@@ -337,8 +353,7 @@ def duckdb_complex_join(csv_path: str, cached_df: Optional[Any] = None) -> pd.Da
 def duckdb_timeseries(csv_path: str, cached_df: Optional[Any] = None) -> pd.DataFrame:
     """Extract hour from timestamp, group by (hour, event_type), count. (cached_df unused for consistency)"""
     def operation(path: str, conn: duckdb.DuckDBPyConnection) -> pd.DataFrame:
-        fmt = detect_file_format(Path(path))
-        source = f"read_parquet('{path}')" if fmt == 'parquet' else f"read_csv_auto('{path}')"
+        source = _duckdb_source(path)
         try:
             return conn.execute(f"""
                 SELECT date_part('hour', CAST(timestamp AS TIMESTAMP)) AS hour,
@@ -487,9 +502,11 @@ def polars_timeseries(csv_path: str, cached_df: Optional[pl.DataFrame] = None) -
         if "event_type" not in df.columns:
             return None
         if "timestamp" in df.columns:
-            df2 = df.with_columns(
-                pl.col("timestamp").str.to_datetime(strict=False).dt.hour().alias("_hour")
-            )
+            if df["timestamp"].dtype == pl.Utf8:
+                hour_expr = pl.col("timestamp").str.slice(11, 2).cast(pl.UInt8)
+            else:
+                hour_expr = pl.col("timestamp").dt.hour()
+            df2 = df.with_columns(hour_expr.alias("_hour"))
         else:
             df2 = df.with_columns(pl.lit(0).alias("_hour"))
         return df2.group_by(["_hour", "event_type"]).agg(pl.len().alias("count"))
@@ -530,7 +547,20 @@ def run_library_benchmarks(library_name: str, csv_path: str, repeat: int = 1) ->
         cached_df = load_and_optimize_fireducks(csv_path)
     elif library_name == "polars":
         print("Loading Polars DataFrame once...")
+        prep_start = time.perf_counter()
         cached_df = _read_polars(csv_path)
+        _print_prep_timing("polars", "read/load", prep_start)
+        _print_prep_timing("polars", "total load/optimization", prep_start)
+    elif library_name == "duckdb":
+        prep_start = time.perf_counter()
+        elapsed = DUCKDB_SOURCE.prepare(csv_path)
+        if elapsed is None:
+            record_prep_timing("duckdb", "total load/optimization", 0.0)
+            print("  [duckdb prep] total load/optimization: 0.000s (file scan mode)")
+        else:
+            record_prep_timing("duckdb", "read/load cached table", elapsed)
+            print(f"  [duckdb prep] read/load cached table: {elapsed:.3f}s")
+            _print_prep_timing("duckdb", "total load/optimization", prep_start)
 
     out: dict = {}
     for op_name, op_func in operations.items():
@@ -553,7 +583,11 @@ def run_library_benchmarks(library_name: str, csv_path: str, repeat: int = 1) ->
     if cached_df is not None:
         print(f"  Releasing cached {library_name} DataFrame...")
         del cached_df
+        step_start = time.perf_counter()
         gc.collect()
+        _print_prep_timing(library_name, "gc after release", step_start)
+    if library_name == "duckdb":
+        DUCKDB_SOURCE.close()
 
     return out
 
@@ -628,62 +662,46 @@ def save_results_to_csv(results: dict, host_info: dict, script_name: str, datase
         dataset_size (int): Number of records in the dataset.
     """
     try:
-        file_exists = RESULTS_CSV_PATH.exists()
-        with open(RESULTS_CSV_PATH, mode='a', newline='', encoding='utf-8') as file:
-            writer = csv.writer(file)
-            if not file_exists:
-                header = [
-                    "timestamp", "hostname", "platform", "system", "release", "version", "machine", "processor",
-                    "cpu_count_logical", "cpu_count_physical", "cpu_freq_max", "cpu_freq_current",
-                    "memory_total_gb", "memory_available_gb", "python_version", "python_implementation",
-                    "cpu_brand", "cpu_arch",  # Host info ends here
-                    "dataset_size", "dataset_name", "dataset_format",  # Dataset metadata
-                    "filter_group_pandas_seconds", "filter_group_polars_seconds",
-                    "filter_group_duckdb_seconds", "filter_group_fireducks_seconds",
-                    "statistics_pandas_seconds", "statistics_polars_seconds",
-                    "statistics_duckdb_seconds", "statistics_fireducks_seconds",
-                    "complex_join_pandas_seconds", "complex_join_polars_seconds",
-                    "complex_join_duckdb_seconds", "complex_join_fireducks_seconds",
-                    "timeseries_pandas_seconds", "timeseries_polars_seconds",
-                    "timeseries_duckdb_seconds", "timeseries_fireducks_seconds",
-                    "script_name"  # Moved to the end
-                ]
-                writer.writerow(header)
-            
-            # Derive dataset metadata
-            try:
-                ds_name = DATASET_PATH.name if DATASET_PATH else 'unknown'
-                suffs = [s.lower() for s in (DATASET_PATH.suffixes if DATASET_PATH else [])]
-                comp = {'.gz', '.zip', '.zst', '.bz2'}
-                base = [s for s in suffs if s not in comp]
-                ext = (base[-1] if base else (DATASET_PATH.suffix if DATASET_PATH else '')).lower().lstrip('.')
-                if ext in ('jsonl', 'ndjson'):
-                    ext = 'ndjson'
-                ds_fmt = ext or 'unknown'
-            except Exception:
-                ds_name = 'unknown'
-                ds_fmt = 'unknown'
+        header = [
+            "timestamp", "hostname", "platform", "system", "release", "version", "machine", "processor",
+            "cpu_count_logical", "cpu_count_physical", "cpu_freq_max", "cpu_freq_current",
+            "memory_total_gb", "memory_available_gb", "python_version", "python_implementation",
+            "cpu_brand", "cpu_arch",
+            "dataset_size", "dataset_name", "dataset_format",
+            "filter_group_pandas_seconds", "filter_group_polars_seconds",
+            "filter_group_duckdb_seconds", "filter_group_fireducks_seconds",
+            "statistics_pandas_seconds", "statistics_polars_seconds",
+            "statistics_duckdb_seconds", "statistics_fireducks_seconds",
+            "complex_join_pandas_seconds", "complex_join_polars_seconds",
+            "complex_join_duckdb_seconds", "complex_join_fireducks_seconds",
+            "timeseries_pandas_seconds", "timeseries_polars_seconds",
+            "timeseries_duckdb_seconds", "timeseries_fireducks_seconds",
+            *PREP_COLUMNS,
+            "script_name",
+        ]
 
-            row = [
-                host_info.get("timestamp"), host_info.get("hostname"), host_info.get("platform"),
-                host_info.get("system"), host_info.get("release"), host_info.get("version"),
-                host_info.get("machine"), host_info.get("processor"), host_info.get("cpu_count_logical"),
-                host_info.get("cpu_count_physical"), host_info.get("cpu_freq_max"),
-                host_info.get("cpu_freq_current"), host_info.get("memory_total_gb"),
-                host_info.get("memory_available_gb"), host_info.get("python_version"),
-                host_info.get("python_implementation"), host_info.get("cpu_brand"),
-                host_info.get("cpu_arch"),
-                dataset_size, ds_name, ds_fmt,
-            ]
-            
-            # Append timing values directly - CSV writer handles None as empty strings
-            for op in ["filter_group", "statistics", "complex_join", "timeseries"]:
-                for lib in ["pandas", "polars", "duckdb", "fireducks"]:
-                    val = results.get(op, {}).get(lib)
-                    row.append(val)  # Let CSV writer handle None -> empty string
-    
-            row.append(script_name)
-            writer.writerow(row)
+        ds_name = DATASET_PATH.name if DATASET_PATH else 'unknown'
+        ds_fmt = detect_file_format(DATASET_PATH) if DATASET_PATH else 'unknown'
+
+        row = [
+            host_info.get("timestamp"), host_info.get("hostname"), host_info.get("platform"),
+            host_info.get("system"), host_info.get("release"), host_info.get("version"),
+            host_info.get("machine"), host_info.get("processor"), host_info.get("cpu_count_logical"),
+            host_info.get("cpu_count_physical"), host_info.get("cpu_freq_max"),
+            host_info.get("cpu_freq_current"), host_info.get("memory_total_gb"),
+            host_info.get("memory_available_gb"), host_info.get("python_version"),
+            host_info.get("python_implementation"), host_info.get("cpu_brand"),
+            host_info.get("cpu_arch"),
+            dataset_size, ds_name, ds_fmt,
+        ]
+
+        for op in ["filter_group", "statistics", "complex_join", "timeseries"]:
+            for lib in ["pandas", "polars", "duckdb", "fireducks"]:
+                row.append(results.get(op, {}).get(lib))
+
+        row.extend(get_prep_csv_values())
+        row.append(script_name)
+        append_csv_row_with_schema(RESULTS_CSV_PATH, header, row)
         print(f"Results saved to {RESULTS_CSV_PATH}")
     except Exception as e:
         print(f"Error saving results to CSV: {e}")
@@ -713,10 +731,46 @@ if __name__ == "__main__":
         print()
         
         # Optional CLI/env dataset override
-        parser = argparse.ArgumentParser(add_help=False)
+        parser = argparse.ArgumentParser(description="Comprehensive Data Processing Benchmark")
         parser.add_argument("-d", "--dataset", type=str, help="Path to the dataset file to benchmark")
         parser.add_argument("-o", "--output", type=str, help="Output CSV file path for results")
+        parser.add_argument(
+            "--prep-memory-report",
+            choices=["off", "shallow", "deep"],
+            default="off",
+            help="Measure pandas/fireducks memory before/after optimization. Deep is expensive.",
+        )
+        parser.add_argument(
+            "--optimized-cache",
+            choices=["off", "read", "write", "readwrite", "refresh"],
+            default="off",
+            help="Use optimized pandas/fireducks parquet cache to skip repeated dtype optimization.",
+        )
+        parser.add_argument(
+            "--optimized-cache-dir",
+            type=Path,
+            default=OPTIMIZED_CACHE_DIR,
+            help="Directory for optimized pandas/fireducks cache files.",
+        )
+        parser.add_argument(
+            "--no-csv-dtype-hints",
+            action="store_true",
+            help="Disable dtype hints while loading CSV with pandas/fireducks.",
+        )
+        parser.add_argument(
+            "--duckdb-mode",
+            choices=["file", "cached"],
+            default="file",
+            help="DuckDB file mode scans per operation; cached mode loads once into a temp table.",
+        )
         args, _ = parser.parse_known_args()
+        PREP_MEMORY_REPORT = args.prep_memory_report
+        OPTIMIZED_CACHE_MODE = args.optimized_cache
+        OPTIMIZED_CACHE_DIR = args.optimized_cache_dir
+        USE_CSV_DTYPE_HINTS = not args.no_csv_dtype_hints
+        DUCKDB_SOURCE.set_mode(args.duckdb_mode)
+        reset_prep_timings()
+
         dataset_env = os.environ.get("BENCHMARK_DATASET")
         chosen = args.dataset or dataset_env
         DATASET_PATH = None
@@ -752,6 +806,11 @@ if __name__ == "__main__":
         print(f"Running on: {host_info.get('hostname', 'Unknown')} ({host_info.get('platform', 'Unknown')})")
         print(f"CPU: {host_info.get('cpu_brand', 'Unknown')} ({host_info.get('cpu_count_logical', 'N/A')} logical cores)")
         print(f"Memory: {host_info.get('memory_total_gb', 'N/A')} GB total")
+        print("Preparation settings:")
+        print(f"  - Prep memory report: {PREP_MEMORY_REPORT}")
+        print(f"  - Optimized cache: {OPTIMIZED_CACHE_MODE} ({OPTIMIZED_CACHE_DIR})")
+        print(f"  - CSV dtype hints: {'enabled' if USE_CSV_DTYPE_HINTS else 'disabled'}")
+        print(f"  - DuckDB mode: {args.duckdb_mode}")
 
         # Run all benchmarks
         print(f"\nStarting comprehensive benchmark with {DATASET_PATH}")

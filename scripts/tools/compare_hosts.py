@@ -27,18 +27,18 @@ Usage:
     # Keep outliers (disable filtering)
     python compare_hosts.py --csv data/results.csv --host HostA --host HostB --keep-outliers
     
-    # Export to JSON with specific libraries and formats
+    # Export to JSON with specific libraries, formats, and dataset size
     python compare_hosts.py --csv data/results.csv --host HostA --host HostB \\
-        --libs pandas,polars,duckdb --formats csv,parquet --json-out report.json
+        --libs pandas,polars,duckdb --formats csv,parquet --dataset-size 10000000 --json-out report.json
 
 Example Output:
-    ═══════════════════════════════════════════════════════════════════════════
+    ------------------------------------------------------------------------
                               WINNER: HostB is faster
-    ═══════════════════════════════════════════════════════════════════════════
+    ------------------------------------------------------------------------
     
     OVERALL SUMMARY:
-      HostA: 15.23s ±2.45 (mean ±stdev)
-      HostB: 9.87s ±1.32 (mean ±stdev)
+      HostA: 15.23s +/-2.45 (mean +/-stdev)
+      HostB: 9.87s +/-1.32 (mean +/-stdev)
       HostB is 35.2% faster than HostA
 
 Author: Data Processing Benchmark Project
@@ -48,13 +48,11 @@ Last Updated: January 2026
 
 import csv
 import argparse
-import sys
 from pathlib import Path
 from statistics import mean, median, stdev
 from typing import Dict, List, Optional, Tuple
 import difflib
 from datetime import datetime, timezone
-import os
 import numpy as np
 
 LIB_OPS = {
@@ -190,13 +188,33 @@ def _filter_rows_by_host(rows: List[Dict[str, str]], host: str) -> List[Dict[str
     return [r for r in rows if r.get('hostname') == host]
 
 
-def _dataset_signature_for_host(rows: List[Dict[str, str]], host: str) -> Dict[str, Optional[str]]:
+def _dataset_size_from_row(row: Dict[str, str]) -> Optional[int]:
+    """Return dataset_size as an int when available."""
+    value = fval(row.get('dataset_size'))
+    if value is None:
+        return None
+    return int(round(value))
+
+
+def _dataset_label(row: Dict[str, str]) -> str:
+    size = _dataset_size_from_row(row)
+    name = row.get('dataset_name') or ''
+    fmt = row.get('dataset_format') or ''
+    return f"{size if size is not None else ''}|{name}|{fmt}"
+
+
+def _dataset_signature_for_host(rows: List[Dict[str, str]], host: str) -> Dict[str, object]:
     host_rows = _filter_rows_by_host(rows, host)
     ts_vals = [r.get('timestamp') for r in host_rows if r.get('timestamp')]
     max_ts = max(ts_vals) if ts_vals else None
+    datasets: Dict[str, int] = {}
+    for row in host_rows:
+        label = _dataset_label(row)
+        datasets[label] = datasets.get(label, 0) + 1
     return {
         'rows': len(host_rows),
         'max_timestamp': max_ts,
+        'datasets': dict(sorted(datasets.items())),
     }
 
 
@@ -220,6 +238,9 @@ def _build_meta(
     host_a: str,
     host_b: str,
     formats: Optional[List[str]],
+    dataset_size: Optional[int],
+    dataset_names: Optional[List[str]],
+    allow_mixed_datasets: bool,
     libs: Optional[List[str]],
     tie_threshold_pct: float,
     rows_effective: List[Dict[str, str]],
@@ -233,7 +254,7 @@ def _build_meta(
         host_b: _dataset_signature_for_host(rows_effective, host_b),
     }
     return {
-        'version': 1,
+        'version': 2,
         'generated_at_utc': datetime.now(timezone.utc).isoformat(),
         'generated_via': source,
         'source_report': source_report,
@@ -244,6 +265,9 @@ def _build_meta(
         'args': {
             'hosts': [host_a, host_b],
             'formats': _norm_list(formats),
+            'dataset_size': int(dataset_size) if dataset_size is not None else None,
+            'dataset_names': _norm_list(dataset_names),
+            'allow_mixed_datasets': bool(allow_mixed_datasets),
             'libs': _norm_libs_arg(libs),
             'tie_threshold_pct': float(tie_threshold_pct),
             'os_filter': _norm_list(os_filter),
@@ -253,9 +277,9 @@ def _build_meta(
     }
 
 
-def _signature_matches(meta: Dict, current_sig: Dict[str, Dict[str, Optional[str]]]) -> bool:
+def _signature_matches(meta: Dict, current_sig: Dict[str, Dict[str, object]]) -> bool:
     try:
-        if meta.get('version') != 1:
+        if meta.get('version') != 2:
             return False
         meta_sig = meta.get('signature') or {}
         # Require all hosts present.
@@ -269,10 +293,26 @@ def _signature_matches(meta: Dict, current_sig: Dict[str, Dict[str, Optional[str
         return False
 
 
-def _args_match(meta: Dict, formats: Optional[List[str]], libs: Optional[List[str]], tie_threshold_pct: float, os_filter: Optional[List[str]] = None) -> bool:
+def _args_match(
+    meta: Dict,
+    formats: Optional[List[str]],
+    dataset_size: Optional[int],
+    dataset_names: Optional[List[str]],
+    allow_mixed_datasets: bool,
+    libs: Optional[List[str]],
+    tie_threshold_pct: float,
+    os_filter: Optional[List[str]] = None,
+) -> bool:
     try:
         a = meta.get('args') or {}
         if _norm_list(a.get('formats')) != _norm_list(formats):
+            return False
+        meta_dataset_size = a.get('dataset_size')
+        if (int(meta_dataset_size) if meta_dataset_size is not None else None) != dataset_size:
+            return False
+        if _norm_list(a.get('dataset_names')) != _norm_list(dataset_names):
+            return False
+        if bool(a.get('allow_mixed_datasets')) != bool(allow_mixed_datasets):
             return False
         if _norm_libs_arg(a.get('libs')) != _norm_libs_arg(libs):
             return False
@@ -644,15 +684,15 @@ def filter_similar_memory(rows_a: List[Dict[str, str]], rows_b: List[Dict[str, s
     CRITICAL: Handles WSL2 memory allocation correctly!
     - WSL2 shows ~50% of physical RAM as memory_total_gb (Windows allocates half to WSL2 VM)
     - Windows/Linux native show full physical RAM as memory_total_gb
-    - Example: 64GB machine → Windows shows 64GB, WSL2 shows 32GB
+    - Example: 64GB machine -> Windows shows 64GB, WSL2 shows 32GB
     
     Solution: Normalize WSL2 memory by 2x to estimate physical hardware
     
     Strategy:
-        1. Normalize memory: WSL2 memory_total_gb × 2, others use raw value
+        1. Normalize memory: WSL2 memory_total_gb x 2, others use raw value
         2. Calculate memory range for each host (min, max, mean)
         3. Find overlapping range between hosts
-        4. Filter both hosts to the overlapping range ± tolerance
+        4. Filter both hosts to the overlapping range +/- tolerance
         5. Track original vs normalized values for reporting
         
     Args:
@@ -727,7 +767,7 @@ def filter_similar_memory(rows_a: List[Dict[str, str]], rows_b: List[Dict[str, s
     for _, m_norm, m_raw, os in mem_a:
         key = f"{os or 'Unknown'}"
         if os and 'WSL' in os.upper():
-            key = f"{os} ({m_raw:.0f}GB→{m_norm:.0f}GB)"
+            key = f"{os} ({m_raw:.0f}GB->{m_norm:.0f}GB)"
         else:
             key = f"{os or 'Unknown'} ({m_norm:.0f}GB)"
         os_mem_a.setdefault(key, []).append(m_norm)
@@ -736,7 +776,7 @@ def filter_similar_memory(rows_a: List[Dict[str, str]], rows_b: List[Dict[str, s
     for _, m_norm, m_raw, os in mem_b:
         key = f"{os or 'Unknown'}"
         if os and 'WSL' in os.upper():
-            key = f"{os} ({m_raw:.0f}GB→{m_norm:.0f}GB)"
+            key = f"{os} ({m_raw:.0f}GB->{m_norm:.0f}GB)"
         else:
             key = f"{os or 'Unknown'} ({m_norm:.0f}GB)"
         os_mem_b.setdefault(key, []).append(m_norm)
@@ -755,7 +795,7 @@ def filter_similar_memory(rows_a: List[Dict[str, str]], rows_b: List[Dict[str, s
                 }
             }
             if wsl2_normalized:
-                info['wsl2_note'] = 'WSL2 memory normalized (×2) to estimate physical hardware. WSL2 shows ~50% of physical RAM as total memory.'
+                info['wsl2_note'] = 'WSL2 memory normalized (x2) to estimate physical hardware. WSL2 shows ~50% of physical RAM as total memory.'
             return rows_a, rows_b, info
     
     # Find overlapping range
@@ -775,7 +815,7 @@ def filter_similar_memory(rows_a: List[Dict[str, str]], rows_b: List[Dict[str, s
             }
         }
         if wsl2_normalized:
-            filter_info['wsl2_note'] = 'Note: WSL2 memory was normalized (×2) but still no overlap found'
+            filter_info['wsl2_note'] = 'Note: WSL2 memory was normalized (x2) but still no overlap found'
         return rows_a, rows_b, filter_info
     
     # Apply filtering to overlapping range (with tolerance)
@@ -801,7 +841,7 @@ def filter_similar_memory(rows_a: List[Dict[str, str]], rows_b: List[Dict[str, s
             }
         }
         if wsl2_normalized:
-            filter_info['wsl2_note'] = 'Note: WSL2 memory was normalized (×2) but filtering skipped to retain all data'
+            filter_info['wsl2_note'] = 'Note: WSL2 memory was normalized (x2) but filtering skipped to retain all data'
         return rows_a, rows_b, filter_info
     
     # Only apply filter if it actually removes rows from at least one host
@@ -816,7 +856,7 @@ def filter_similar_memory(rows_a: List[Dict[str, str]], rows_b: List[Dict[str, s
             }
         }
         if wsl2_normalized:
-            info['wsl2_note'] = 'WSL2 memory normalized (×2) - compares physical hardware equivalents'
+            info['wsl2_note'] = 'WSL2 memory normalized (x2) - compares physical hardware equivalents'
         return rows_a, rows_b, info
     
     # Calculate new memory stats after filtering (using normalized values)
@@ -844,8 +884,8 @@ def filter_similar_memory(rows_a: List[Dict[str, str]], rows_b: List[Dict[str, s
     
     filter_info = {
         'applied': True,
-        'reason': f'Filtered to overlapping memory range: {overlap_min:.1f}-{overlap_max:.1f}GB estimated physical RAM (±{tolerance_gb}GB tolerance)',
-        'note': 'WSL2 memory normalized (×2) to estimate physical hardware. WSL2 shows ~50% of physical RAM as memory_total_gb.' if wsl2_normalized else 'Filtering based on memory_total_gb (physical hardware)',
+        'reason': f'Filtered to overlapping memory range: {overlap_min:.1f}-{overlap_max:.1f}GB estimated physical RAM (+/-{tolerance_gb}GB tolerance)',
+        'note': 'WSL2 memory normalized (x2) to estimate physical hardware. WSL2 shows ~50% of physical RAM as memory_total_gb.' if wsl2_normalized else 'Filtering based on memory_total_gb (physical hardware)',
         'wsl2_normalized': wsl2_normalized,
         'original_counts': {'host_a': len(rows_a), 'host_b': len(rows_b)},
         'filtered_counts': {'host_a': len(filtered_rows_a), 'host_b': len(filtered_rows_b)},
@@ -1090,6 +1130,119 @@ def _filter_rows_by_formats(rows: List[Dict[str, str]], formats: Optional[List[s
     return out
 
 
+def _filter_rows_by_dataset_names(rows: List[Dict[str, str]], dataset_names: Optional[List[str]]) -> List[Dict[str, str]]:
+    names = _norm_list(dataset_names)
+    if not names:
+        return rows
+    allow = set(names)
+    return [r for r in rows if (r.get('dataset_name') or '').lower() in allow]
+
+
+def _filter_rows_by_dataset_size(rows: List[Dict[str, str]], dataset_size: Optional[int]) -> List[Dict[str, str]]:
+    if dataset_size is None:
+        return rows
+    return [r for r in rows if _dataset_size_from_row(r) == dataset_size]
+
+
+def _dataset_sizes_for_host(rows: List[Dict[str, str]], host: str) -> List[int]:
+    sizes = {
+        size
+        for r in rows
+        if r.get('hostname') == host
+        for size in [_dataset_size_from_row(r)]
+        if size is not None
+    }
+    return sorted(sizes)
+
+
+def _dataset_counts_for_host(rows: List[Dict[str, str]], host: str) -> Dict[str, int]:
+    counts: Dict[str, int] = {}
+    for row in rows:
+        if row.get('hostname') != host:
+            continue
+        label = _dataset_label(row)
+        counts[label] = counts.get(label, 0) + 1
+    return dict(sorted(counts.items()))
+
+
+def _filter_rows_by_dataset_options(
+    rows: List[Dict[str, str]],
+    host_a: str,
+    host_b: str,
+    *,
+    dataset_size: Optional[int],
+    dataset_names: Optional[List[str]],
+    allow_mixed_datasets: bool,
+) -> Tuple[List[Dict[str, str]], Dict]:
+    """Apply explicit dataset filters and the default one-size safeguard."""
+    rows_before = rows
+    rows_named = _filter_rows_by_dataset_names(rows_before, dataset_names)
+
+    sizes_a = _dataset_sizes_for_host(rows_named, host_a)
+    sizes_b = _dataset_sizes_for_host(rows_named, host_b)
+    common_sizes = sorted(set(sizes_a) & set(sizes_b))
+
+    selected_size = dataset_size
+    auto_selected = False
+    reason = "No dataset-size filtering requested"
+
+    if selected_size is not None:
+        reason = f"Restricted to requested dataset_size={selected_size:,}"
+    elif allow_mixed_datasets:
+        reason = "Mixed dataset sizes allowed by --allow-mixed-datasets"
+    elif common_sizes:
+        selected_size = max(common_sizes)
+        auto_selected = True
+        reason = f"Auto-selected largest common dataset_size={selected_size:,}"
+    else:
+        reason = "No common dataset_size found after explicit filters"
+
+    filtered = _filter_rows_by_dataset_size(rows_named, selected_size)
+
+    original_counts = {
+        'host_a': len(_filter_rows_by_host(rows_before, host_a)),
+        'host_b': len(_filter_rows_by_host(rows_before, host_b)),
+    }
+    filtered_counts = {
+        'host_a': len(_filter_rows_by_host(filtered, host_a)),
+        'host_b': len(_filter_rows_by_host(filtered, host_b)),
+    }
+    info = {
+        'applied': bool(dataset_names) or selected_size is not None,
+        'reason': reason,
+        'requested_size': dataset_size,
+        'selected_size': selected_size,
+        'auto_selected': auto_selected,
+        'allow_mixed_datasets': allow_mixed_datasets,
+        'requested_names': _norm_list(dataset_names),
+        'common_sizes': common_sizes,
+        'host_a_sizes': sizes_a,
+        'host_b_sizes': sizes_b,
+        'original_counts': original_counts,
+        'filtered_counts': filtered_counts,
+        'removed_counts': {
+            'host_a': original_counts['host_a'] - filtered_counts['host_a'],
+            'host_b': original_counts['host_b'] - filtered_counts['host_b'],
+        },
+        'datasets_before': {
+            'host_a': _dataset_counts_for_host(rows_before, host_a),
+            'host_b': _dataset_counts_for_host(rows_before, host_b),
+        },
+        'datasets_after': {
+            'host_a': _dataset_counts_for_host(filtered, host_a),
+            'host_b': _dataset_counts_for_host(filtered, host_b),
+        },
+    }
+    if not allow_mixed_datasets and dataset_size is None and len(common_sizes) > 1:
+        info['note'] = (
+            "Multiple common dataset sizes were present; use --dataset-size for a different size "
+            "or --allow-mixed-datasets to compare all sizes together."
+        )
+    if not common_sizes and dataset_size is None and not allow_mixed_datasets:
+        info['warning'] = "No shared dataset_size was found for the selected hosts and filters."
+    return filtered, info
+
+
 def _print_console(report: Dict, tie_threshold_pct: float = 5.0, quiet: bool = False) -> None:
     a = report.get('overall', {}).get('summary_a') or {}
     b = report.get('overall', {}).get('summary_b') or {}
@@ -1127,12 +1280,31 @@ def _print_console(report: Dict, tie_threshold_pct: float = 5.0, quiet: bool = F
         for host, stats in outliers_info.items():
             print(f"{host}: {stats['removed']} outliers removed ({stats['remaining']}/{stats['original']} rows retained)")
         print("")
+
+    dataset_filter = report.get('dataset_filter')
+    if dataset_filter and (dataset_filter.get('applied') or dataset_filter.get('warning')):
+        print("== Dataset Filtering ==")
+        if dataset_filter.get('warning'):
+            print(f"WARNING: {dataset_filter.get('warning')}")
+        print(f"- {dataset_filter.get('reason')}")
+        if dataset_filter.get('note'):
+            print(f"  {dataset_filter.get('note')}")
+        selected_size = dataset_filter.get('selected_size')
+        if selected_size is not None:
+            print(f"  Dataset size: {int(selected_size):,} rows")
+        original_counts = dataset_filter.get('original_counts', {})
+        filtered_counts = dataset_filter.get('filtered_counts', {})
+        print(
+            f"  Rows retained: {report['host_a']} {filtered_counts.get('host_a', 0)}/{original_counts.get('host_a', 0)}, "
+            f"{report['host_b']} {filtered_counts.get('host_b', 0)}/{original_counts.get('host_b', 0)}"
+        )
+        print("")
     
     # Report memory filtering if applicable
     memory_filter = report.get('memory_filter')
     if memory_filter and memory_filter.get('applied'):
         print("== Memory-Aware Filtering ==")
-        print(f"✓ {memory_filter.get('reason')}")
+        print(f"- {memory_filter.get('reason')}")
         if memory_filter.get('note'):
             print(f"  {memory_filter.get('note')}")
         
@@ -1155,7 +1327,7 @@ def _print_console(report: Dict, tie_threshold_pct: float = 5.0, quiet: bool = F
                         print(f"    Physical RAM estimate after:  {mem_after_a.get('min', 0):.1f}-{mem_after_a.get('max', 0):.1f} GB (mean: {mem_after_a.get('mean', 0):.1f} GB)")
                     else:
                         print(f"    Physical RAM estimate before: {mem_before_a.get('min', 0):.1f}-{mem_before_a.get('max', 0):.1f} GB (mean: {mem_before_a.get('mean', 0):.1f} GB)")
-                        print(f"    ⚠️ All rows filtered out - no matching memory configuration")
+                        print("    WARNING: All rows filtered out - no matching memory configuration")
                 
                 removed_breakdown = memory_filter.get('removed_breakdown', {}).get('host_a', {})
                 if removed_breakdown:
@@ -1164,7 +1336,7 @@ def _print_console(report: Dict, tie_threshold_pct: float = 5.0, quiet: bool = F
                 configs_before = memory_filter.get('configs_before', {}).get('host_a', {})
                 configs_after = memory_filter.get('configs_after', {}).get('host_a', {})
                 if configs_before != configs_after:
-                    print(f"    Memory tiers: {configs_before} → {configs_after}")
+                    print(f"    Memory tiers: {configs_before} -> {configs_after}")
             
             if removed_b > 0:
                 orig_b = memory_filter.get('original_counts', {}).get('host_b', 0)
@@ -1180,7 +1352,7 @@ def _print_console(report: Dict, tie_threshold_pct: float = 5.0, quiet: bool = F
                         print(f"    Physical RAM estimate after:  {mem_after_b.get('min', 0):.1f}-{mem_after_b.get('max', 0):.1f} GB (mean: {mem_after_b.get('mean', 0):.1f} GB)")
                     else:
                         print(f"    Physical RAM estimate before: {mem_before_b.get('min', 0):.1f}-{mem_before_b.get('max', 0):.1f} GB (mean: {mem_before_b.get('mean', 0):.1f} GB)")
-                        print(f"    ⚠️ All rows filtered out - no matching memory configuration")
+                        print("    WARNING: All rows filtered out - no matching memory configuration")
                 
                 removed_breakdown = memory_filter.get('removed_breakdown', {}).get('host_b', {})
                 if removed_breakdown:
@@ -1189,19 +1361,19 @@ def _print_console(report: Dict, tie_threshold_pct: float = 5.0, quiet: bool = F
                 configs_before = memory_filter.get('configs_before', {}).get('host_b', {})
                 configs_after = memory_filter.get('configs_after', {}).get('host_b', {})
                 if configs_before != configs_after:
-                    print(f"    Memory tiers: {configs_before} → {configs_after}")
+                    print(f"    Memory tiers: {configs_before} -> {configs_after}")
         print("")
     elif memory_filter and memory_filter.get('warning'):
         print("== Memory Configuration Warning ==")
-        print(f"⚠️  {memory_filter.get('warning')}")
+        print(f"WARNING: {memory_filter.get('warning')}")
         print(f"   {memory_filter.get('reason')}")
         if memory_filter.get('wsl2_note'):
-            print(f"   ℹ️  {memory_filter.get('wsl2_note')}")
+            print(f"   {memory_filter.get('wsl2_note')}")
         print("")
     elif memory_filter and memory_filter.get('wsl2_note'):
         # No filtering applied, but WSL2 normalization important
         print("== Memory Configuration Note ==")
-        print(f"ℹ️  {memory_filter.get('wsl2_note')}")
+        print(f"{memory_filter.get('wsl2_note')}")
         print("")
 
     print("== Summary ==")
@@ -1392,11 +1564,11 @@ def _print_console(report: Dict, tie_threshold_pct: float = 5.0, quiet: bool = F
         print(f"- {report['host_a']}: CV = {cv_a:.1f}% (stdev: {fmt_float(a.get('overall_stdev'))})")
         print(f"- {report['host_b']}: CV = {cv_b:.1f}% (stdev: {fmt_float(b.get('overall_stdev'))})")
         if cv_a < cv_b * 0.8:
-            print(f"  → {report['host_a']} is significantly more stable")
+            print(f"  -> {report['host_a']} is significantly more stable")
         elif cv_b < cv_a * 0.8:
-            print(f"  → {report['host_b']} is significantly more stable")
+            print(f"  -> {report['host_b']} is significantly more stable")
         else:
-            print("  → Both hosts show similar stability")
+            print("  -> Both hosts show similar stability")
         
         # Percentile comparisons (robust to outliers)
         print("\nPercentile Comparison (more robust than mean):")
@@ -1412,7 +1584,7 @@ def _print_console(report: Dict, tie_threshold_pct: float = 5.0, quiet: bool = F
                         winner = f"{report['host_b']} {abs(diff_pct):.1f}% faster"
                     else:
                         winner = f"{report['host_a']} {abs(diff_pct):.1f}% faster"
-                    print(f"- P{pct}: {fmt_float(p_a)} vs {fmt_float(p_b)} → {winner}")
+                    print(f"- P{pct}: {fmt_float(p_a)} vs {fmt_float(p_b)} -> {winner}")
         
         # OS-weighted average (fair when row counts differ)
         by_os = report.get('by_os') or []
@@ -1436,11 +1608,11 @@ def _print_console(report: Dict, tie_threshold_pct: float = 5.0, quiet: bool = F
                 print(f"- {report['host_b']}: {os_weighted_b:.3f}s")
                 if os_weighted_pct is not None:
                     if abs(os_weighted_pct) < tie_threshold_pct:
-                        print(f"  → Tie (within {tie_threshold_pct:.1f}%)")
+                        print(f"  -> Tie (within {tie_threshold_pct:.1f}%)")
                     elif os_weighted_pct > 0:
-                        print(f"  → {report['host_b']} {abs(os_weighted_pct):.1f}% faster (OS-weighted)")
+                        print(f"  -> {report['host_b']} {abs(os_weighted_pct):.1f}% faster (OS-weighted)")
                     else:
-                        print(f"  → {report['host_a']} {abs(os_weighted_pct):.1f}% faster (OS-weighted)")
+                        print(f"  -> {report['host_a']} {abs(os_weighted_pct):.1f}% faster (OS-weighted)")
         
         # Memory efficiency (performance per GB available)
         mem_a = a.get('mem_avail_mean')
@@ -1452,9 +1624,9 @@ def _print_console(report: Dict, tie_threshold_pct: float = 5.0, quiet: bool = F
             print(f"- {report['host_a']}: {mem_eff_a:.4f} s/GB")
             print(f"- {report['host_b']}: {mem_eff_b:.4f} s/GB")
             if mem_eff_a < mem_eff_b * 0.9:
-                print(f"  → {report['host_a']} uses RAM more efficiently")
+                print(f"  -> {report['host_a']} uses RAM more efficiently")
             elif mem_eff_b < mem_eff_a * 0.9:
-                print(f"  → {report['host_b']} uses RAM more efficiently")
+                print(f"  -> {report['host_b']} uses RAM more efficiently")
         
         # Library specialization (which host is best at which library)
         print("\nLibrary Specialization:")
@@ -1501,11 +1673,11 @@ def _print_console(report: Dict, tie_threshold_pct: float = 5.0, quiet: bool = F
             wins_b += 1
         
         if wins_a > wins_b:
-            print(f"→ {report['host_a']} is the better overall choice for data analysis workloads")
+            print(f"-> {report['host_a']} is the better overall choice for data analysis workloads")
         elif wins_b > wins_a:
-            print(f"→ {report['host_b']} is the better overall choice for data analysis workloads")
+            print(f"-> {report['host_b']} is the better overall choice for data analysis workloads")
         else:
-            print("→ Both hosts are competitive; choose based on budget, availability, and specific library needs")
+            print("-> Both hosts are competitive; choose based on budget, availability, and specific library needs")
 
         print("\nInterpretation")
         a_log = a.get('cpu_logical_mean')
@@ -1676,6 +1848,10 @@ def print_report(
     # Include OS intersection filter information
     if 'os_intersection_filter' in result:
         report['os_intersection_filter'] = result['os_intersection_filter']
+
+    # Include dataset filter information
+    if 'dataset_filter' in result:
+        report['dataset_filter'] = result['dataset_filter']
     
     # Include outlier removal information
     if 'outliers_removed' in result:
@@ -1749,6 +1925,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         --host HOSTNAME: Hostname to compare (use twice for two hosts)
         --tie-threshold-pct FLOAT: Percentage threshold for ties (default: 5.0)
         --formats FORMAT [...]: Restrict to specific formats (csv, parquet, json, ndjson)
+        --dataset-size ROWS: Restrict to an exact dataset_size value
+        --dataset-name NAME [...]: Restrict to specific dataset_name values
+        --allow-mixed-datasets: Allow multiple dataset sizes in one overall comparison
         --libs LIBS: Comma-separated libraries to include (default: all)
         --json-out PATH: Output path for JSON/NDJSON report
         --ndjson: Export as NDJSON (line-delimited) instead of single JSON
@@ -1790,7 +1969,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         
         # Filter by libraries and formats, quiet output
         python compare_hosts.py --csv data/results.csv --host HostA --host HostB \\
-            --libs pandas,polars --formats csv,parquet --quiet
+            --libs pandas,polars --formats csv,parquet --dataset-size 10000000 --quiet
     """
     parser = argparse.ArgumentParser(description="Compare two hosts from benchmark results CSV")
     parser.add_argument('--csv', type=Path, default=Path('data/benchmark_results.csv'), help='Path to results CSV')
@@ -1798,6 +1977,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     # Wildcards removed: exact hostnames only
     parser.add_argument('--tie-threshold-pct', type=float, default=5.0, help='Threshold (percent) under which results are considered a tie')
     parser.add_argument('--formats', nargs='+', help='Restrict to these dataset formats (e.g., csv parquet)')
+    parser.add_argument('--dataset-size', type=int, help='Restrict to this exact dataset_size row count (e.g., 10000000)')
+    parser.add_argument('--dataset-name', nargs='+', dest='dataset_names', help='Restrict to these dataset_name values')
+    parser.add_argument('--allow-mixed-datasets', action='store_true', help='Allow multiple dataset sizes in the same overall comparison')
     parser.add_argument('--libs', type=str, help='Comma-separated libraries to include (default: all). Options: pandas,polars,duckdb,fireducks')
     parser.add_argument('--json-out', type=Path, help='Write report to this JSON/NDJSON file (optional; inferred from hosts if omitted)')
     parser.add_argument('--ndjson', action='store_true', help='Write report as NDJSON (one JSON per line)')
@@ -1851,9 +2033,29 @@ def main(argv: Optional[List[str]] = None) -> int:
             args.json_out = default_dir / f"compare_{host_a}_vs_{host_b}{os_suffix}.{ext}"
 
     # Cache lookup (use existing report when inputs/measurements haven't changed)
-    # Cache is keyed by: hosts (unordered), formats, libs, tie-threshold, and a lightweight signature of the
-    # effective dataset (rows + max timestamp per host after applying --formats).
-    rows_effective = _filter_rows_by_formats(rows, args.formats)
+    # Cache is keyed by: hosts (unordered), formats, dataset filters, libs, tie-threshold,
+    # and a lightweight signature of the effective dataset.
+    rows_by_format = _filter_rows_by_formats(rows, args.formats)
+    rows_effective, dataset_filter_info = _filter_rows_by_dataset_options(
+        rows_by_format,
+        host_a,
+        host_b,
+        dataset_size=args.dataset_size,
+        dataset_names=args.dataset_names,
+        allow_mixed_datasets=args.allow_mixed_datasets,
+    )
+    effective_buckets = filter_rows_by_hosts(rows_effective, [host_a, host_b])
+    missing_after_filters = [h for h in (host_a, host_b) if not effective_buckets.get(h)]
+    if missing_after_filters:
+        print(
+            "Error: no benchmark rows remain for "
+            f"{', '.join(missing_after_filters)} after applying format/dataset filters."
+        )
+        print(f"Dataset filter: {dataset_filter_info.get('reason')}")
+        if args.formats:
+            print(f"Formats: {', '.join(args.formats)}")
+        return 2
+
     current_sig = {
         host_a: _dataset_signature_for_host(rows_effective, host_a),
         host_b: _dataset_signature_for_host(rows_effective, host_b),
@@ -1898,7 +2100,16 @@ def main(argv: Optional[List[str]] = None) -> int:
             meta = rep.get('meta')
             if not meta:
                 continue
-            if not _args_match(meta, args.formats, libs, args.tie_threshold_pct, args.os_filter):
+            if not _args_match(
+                meta,
+                args.formats,
+                args.dataset_size,
+                args.dataset_names,
+                args.allow_mixed_datasets,
+                libs,
+                args.tie_threshold_pct,
+                args.os_filter,
+            ):
                 continue
             if not _signature_matches(meta, current_sig):
                 continue
@@ -1910,6 +2121,9 @@ def main(argv: Optional[List[str]] = None) -> int:
                 host_a=host_a,
                 host_b=host_b,
                 formats=args.formats,
+                dataset_size=args.dataset_size,
+                dataset_names=args.dataset_names,
+                allow_mixed_datasets=args.allow_mixed_datasets,
                 libs=libs,
                 tie_threshold_pct=args.tie_threshold_pct,
                 rows_effective=rows_effective,
@@ -1917,6 +2131,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 source_report=str(c),
                 os_filter=args.os_filter,
             )
+            rep['dataset_filter'] = dataset_filter_info
 
             print(f"Cache: HIT (reusing {c})")
 
@@ -1946,16 +2161,22 @@ def main(argv: Optional[List[str]] = None) -> int:
     else:
         print("Cache: MISS (recomputing)")
 
-    result = {
-        **compare_hosts(args.csv, host_a, host_b, remove_outliers=not args.keep_outliers, rows=rows),
-        # Reuse the already loaded rows to avoid reading the CSV twice.
-        'rows_all': rows,
-    }
+    result = compare_hosts(
+        args.csv,
+        host_a,
+        host_b,
+        remove_outliers=not args.keep_outliers,
+        rows=rows_effective,
+    )
+    result['dataset_filter'] = dataset_filter_info
     meta = _build_meta(
         csv_path=args.csv,
         host_a=host_a,
         host_b=host_b,
         formats=args.formats,
+        dataset_size=args.dataset_size,
+        dataset_names=args.dataset_names,
+        allow_mixed_datasets=args.allow_mixed_datasets,
         libs=libs,
         tie_threshold_pct=args.tie_threshold_pct,
         rows_effective=rows_effective,
