@@ -1,7 +1,7 @@
 """
 Small utility to convert a (possibly compressed) CSV/NDJSON log into Parquet
 and report size savings. Uses pandas/pyarrow for maximum compatibility across
-pandas, Modin, Polars, and DuckDB consumers.
+pandas, Polars, and DuckDB consumers.
 
 Usage (PowerShell):
     # CSV -> Parquet (snappy)

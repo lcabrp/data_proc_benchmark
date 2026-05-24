@@ -120,7 +120,6 @@ class BenchmarkConfig(ProjectConfig):
         self.benchmark_libraries = [
             "pandas",
             "polars",
-            "modin",
             "duckdb",
         ]
 
@@ -163,7 +162,6 @@ class EnvironmentConfig:
     def setup_warnings():
         """Setup standard warning filters."""
         import warnings
-        warnings.filterwarnings("ignore", category=FutureWarning, module="modin")
         warnings.filterwarnings("ignore", category=UserWarning, module="ray")
         warnings.filterwarnings("ignore", category=UserWarning, module="dask")
     

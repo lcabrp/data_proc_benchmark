@@ -1,12 +1,11 @@
 # 🔧 Technical Documentation
 
-Deep dive into architecture, library setup (including Modin), and developer tooling.
+Deep dive into architecture, library setup, and developer tooling.
 
 ## 📋 Table of Contents
 
 - [Overview](#overview)
 - [Benchmark Evolution](#benchmark-evolution)
-- [Modin Setup and Stability Guide](#modin-setup-and-stability-guide)
 - [Modules and Utilities](#modules-and-utilities)
 - [Cross-Platform Optimizations](#cross-platform-optimizations)
 - [Data Quality Improvements](#data-quality-improvements)
@@ -65,7 +64,6 @@ Overall: 5518.3MB → 333.8MB (94% reduction)
 The original script provided basic functionality but suffered from several critical issues:
 
 **❌ Problems Identified:**
-- **Modin Memory Issues**: `Task has 4.54 GiB worth of input dependencies, but worker has memory_limit set to 2.47 GiB`
 - **FireDucks Timing Artifacts**: Tiny values like `1.6689300537109375e-06` instead of clean zeros
 - **Platform Incompatibility**: Process-based workers failing on Windows
 - **No Failure Recovery**: Repeated failures on same operations
@@ -75,7 +73,6 @@ The original script provided basic functionality but suffered from several criti
 The v1 enhancement introduced sophisticated solutions for all identified problems:
 
 **✅ Solutions Implemented:**
-- **Adaptive Modin Configuration**: Platform-specific Dask cluster setup
 - **Two-Tier Failure Strategy**: Multi-worker → single-worker → disable fallback
 - **Intelligent Failure Tracking**: Learns from failures and skips problematic configurations
 - **DRY Architecture**: Modular utilities for system detection and memory monitoring
@@ -86,7 +83,7 @@ Adds universal file format support (CSV/Parquet/JSON/NDJSON), automatic dataset 
 
 Key internal functions added:
 - DuckDB operations now use SQL (filter_group, stats, complex_join, timeseries)
-- Added complex_join and timeseries operations for pandas/polars/modin/duckdb
+- Added complex_join and timeseries operations for pandas/polars/duckdb
 - Results writer adjusted to avoid zeros for missing timings
 
 ### Memory Instrumentation & Join Optimization (Post 0.1.2 → 0.1.3)
@@ -99,7 +96,7 @@ Key internal functions added:
     - Helps distinguish inherent algorithm cost vs data format impact.
 
 2. **Complex Join Refactor**
-    - Pandas / Modin: replaced materializing an aggregated summary + merge with in‑place `groupby().transform(...)` assignments (sum/mean metrics + rank). Eliminates an intermediate wide join DataFrame.
+    - Pandas: replaced materializing an aggregated summary + merge with in‑place `groupby().transform(...)` assignments (sum/mean metrics + rank). Eliminates an intermediate wide join DataFrame.
     - Polars: replaced join-based enrichment with a single lazy pipeline applying window functions (`sum().over()`, `mean().over()`, `rank().over()`) followed by top‑N filter before `.collect()`. Reduces materialization and leverages predicate pruning.
     - DuckDB path unchanged (SQL window plan already efficient).
     - Polars timeseries now optimizes UTF-8 timestamp columns by extracting the hour with `str.slice(11, 2).cast(pl.UInt8)` instead of parsing full timestamps for every row, while still falling back to `.dt.hour()` for native datetime columns.
@@ -119,8 +116,6 @@ Limitations / Next Steps:
 Building on v1's foundation, v2 addressed additional reliability and usability issues:
 
 **✅ Additional Solutions Implemented:**
-- **Modin Verbosity Suppression**: Redirected stdout/stderr to prevent Dask worker logs from cluttering output
-- **Task Cancellation Fixes**: Enhanced Dask configurations to prevent "already forgotten" errors in statistics operations
 - **CSV Alignment and Handling**: Fixed key order mismatches and added safe handling for None/0.0 values (saving 0.0 for skipped libraries, N/A for failures)
 - **Summary Accuracy**: Excluded zero-duration results from "fastest" comparisons to avoid misleading winners (e.g., FireDucks at 0.0s)
 - **Host Info Integration**: Centralized system information collection using the `utils.host_info` module
@@ -174,60 +169,13 @@ Results are tagged in CSV with optimization context:
 
 Removed legacy flags `--csv` and `--results` (previously only in `benchmark_01.py`). Update any local invocation scripts accordingly.
 
-## Modin Setup and Stability Guide
-
-Modin can be great, but setup can be a headache. These are the settings that consistently work in this repo.
-
-Prerequisites:
-- Python 3.13+
-- modin[dask] (already in pyproject)
-- dask, distributed (pulled via modin)
-- psutil (for host info; install if missing)
-
-Engine choice:
-- Windows: Dask
-- Linux/macOS: Dask or Ray. We stick to Dask for consistency and fewer extra deps.
-
-Minimal config (place early in your script before importing modin.pandas):
-
-```python
-import modin.config as cfg
-cfg.Engine.put("dask")
-cfg.StorageFormat.put("pandas")
-```
-
-Recommended Dask runtime tuning (Windows stability):
-
-```python
-import logging
-logging.getLogger("distributed").setLevel(logging.ERROR)
-logging.getLogger("tornado").setLevel(logging.ERROR)
-
-import dask
-dask.config.set({
-    "distributed.worker.daemon": False,
-    "distributed.comm.timeouts.connect": "5s",
-})
-```
-
-Operational guidance:
-- Keep one Dask client/session for the process; don't restart between ops.
-- Prefer fewer, larger partitions for wide aggregations (Modin handles partitioning).
-- If an op fails due to memory, re-run with a single worker × more threads.
-
-Common failure and workaround:
-- Error: Task has N GiB worth of dependencies, but worker has memory_limit M GiB
-    - Action: reduce workers to 1, increase threads_per_worker to 4–8; avoid client restarts.
-- Excessive logging/noise
-    - Action: silence logs as shown above; optionally redirect stdout/stderr around modin calls.
-
 ## Modules and Utilities
 
 ### utils/data_io.py
 Universal data IO layer and dataset helpers.
 
 - `UniversalDataReader(default_library='pandas')`
-    - read_file(path, library='pandas'|'polars'|'modin'|'duckdb', usecols=None, ...)
+    - read_file(path, library='pandas'|'polars'|'duckdb', usecols=None, ...)
     - Auto-detects file format: csv (incl .gz/.zip/.zst), parquet, json, ndjson
     - Returns a DataFrame in the chosen library
 
@@ -302,48 +250,6 @@ if platform.system() in ['Linux', 'Darwin']:
         FIREDUCKS_AVAILABLE = True
     except ImportError:
         FIREDUCKS_AVAILABLE = False
-```
-
-## ⚙️ Modin Configuration Challenges
-
-### The Memory Wall Problem
-
-**Issue**: Modin with Dask often hits memory limits on complex operations
-```
-Task '_deploy_dask_func-...' has 4.54 GiB worth of input dependencies,
-but worker tcp://127.0.0.1:51464 has memory_limit set to 2.47 GiB.
-```
-
-**Root Causes**:
-1. **Data Amplification**: Statistical operations create intermediate data structures larger than input
-2. **Worker Isolation**: Each worker needs a copy of data dependencies
-3. **Memory Fragmentation**: Multiple small allocations exceed limits
-
-### Evolution of Solutions
-
-| Version | Approach | Worker Config | Memory Strategy | Success Rate |
-|---------|----------|---------------|----------------|---------------|
-| **benchmark.py** | Basic Dask | Default config | Fixed limits | ❌ 25% (statistics fails) |
-| **benchmark_02.py** | Ray backend | `cfg.Engine.put("ray")` | 8GB hard limit | ❌ Ray unavailable on Windows |
-| **benchmark_03.py** | Conservative | 2 workers × 1 thread | 4GB per worker | ❌ Too conservative |
-| **benchmark_04.py** | Single worker | 1 worker × 4 threads | 6GB limit | ⚠️ No parallelization |
-| **benchmark_01.py** | Adaptive | Platform-aware | Intelligent fallback | ✅ 100% cross-platform |
-| **benchmark_02.py** | Further Enhanced | Platform-aware + fixes | Intelligent fallback + suppression | ✅ 100% cross-platform |
-
-### The Winning Strategy
-
-**Two-Tier Approach**:
-1. **Attempt multi-worker** for performance
-2. **Fallback to single-worker** for compatibility
-3. **Learn from failures** and skip problematic configs
-
-**Client Lifecycle Preservation**:
-```python
-# DON'T restart client between operations (causes dependency loss)
-# client.restart()  # This was causing "lost dependencies" errors
-
-# DO preserve worker state across operations
-client = get_dask_client()  # Create once, reuse
 ```
 
 ## 📊 Data Quality Improvements
@@ -481,7 +387,7 @@ Recent benchmarking reveals significant performance advantages when using column
 **Benchmark Configuration:**
 - Dataset: 10 million synthetic log records
 - Operations: Filter/Group, Statistics, Complex Join, Timeseries
-- Libraries: pandas, polars, duckdb, modin
+- Libraries: pandas, polars, duckdb
 - Hardware: AMD Ryzen AI 9 365 (20 cores), 31.12GB RAM
 - File Formats: CSV (uncompressed), Parquet (snappy compression)
 
@@ -498,14 +404,12 @@ Recent benchmarking reveals significant performance advantages when using column
 
 **10M Record Dataset Performance** (Intel i7-1065G7, 8 cores, 19.78GB RAM):
 
-| Operation | Polars | DuckDB | Pandas | Modin (v1) | Improvement |
-|-----------|--------|--------|--------|------------|-------------|
-| **Filter/Group** | 1.55s | 4.04s | 22.92s | 25.46s* | 14.8x vs pandas |
-| **Statistics** | 2.48s | 4.97s | 22.82s | 41.06s* | 9.2x vs pandas |
-| **Complex Join** | 6.12s | 31.29s | 42.16s | 60.91s* | 6.9x vs pandas |
-| **Timeseries** | 9.04s | 5.25s | 27.26s | 37.55s* | 3.0x vs pandas |
-
-*_Modin performance varies significantly based on operation complexity and available memory_
+| Operation | Polars | DuckDB | Pandas | Improvement |
+|-----------|--------|--------|--------|-------------|
+| **Filter/Group** | 1.55s | 4.04s | 22.92s | 14.8x vs pandas |
+| **Statistics** | 2.48s | 4.97s | 22.82s | 9.2x vs pandas |
+| **Complex Join** | 6.12s | 31.29s | 42.16s | 6.9x vs pandas |
+| **Timeseries** | 9.04s | 5.25s | 27.26s | 3.0x vs pandas |
 
 ### Memory Optimization Impact Analysis
 
@@ -535,19 +439,12 @@ Recent benchmarking reveals significant performance advantages when using column
 
 1. **Polars Excellence**: Dominates 3/4 operations with Rust-powered performance
 2. **DuckDB Strength**: Superior for analytical/OLAP operations (timeseries)
-3. **Modin Challenges**: Memory pressure limits effectiveness on statistics operations
-4. **Pandas Reliability**: Consistent baseline performance across all operations
-5. **Memory Optimization Critical**: 2-5x performance impact on systems with < 16GB RAM
+3. **Pandas Reliability**: Consistent baseline performance across all operations
+4. **Memory Optimization Critical**: 2-5x performance impact on systems with < 16GB RAM
 
 ## 🛠️ Troubleshooting
 
 ### Common Issues and Solutions
-
-#### Modin Memory Errors
-```
-Task has X.XX GiB worth of input dependencies, but worker has memory_limit set to Y.YY GiB
-```
-**Solution**: The v1 implementation automatically handles this with adaptive fallback
 
 #### DuckDB Complex Join Failures in WSL2
 
@@ -634,7 +531,6 @@ log_memory_usage("Operation end")
 from utils import PlatformDetector
 detector = PlatformDetector()
 print(detector.get_platform_flags())
-print(detector.get_recommended_modin_engine())
 ```
 
 ## 🔮 Future Enhancements

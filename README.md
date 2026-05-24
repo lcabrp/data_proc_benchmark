@@ -13,7 +13,6 @@ This benchmark tests popular data processing libraries against multi‑million r
 | Library | Description | Best For |
 |---------|-------------|----------|
 | **🐼 Pandas** | The standard data analysis library | General data manipulation, small to medium datasets |
-| **⚡ Modin** | Drop-in pandas replacement with parallelization | Scaling pandas operations to larger datasets |
 | **🦀 Polars** | Rust-powered DataFrame library | High performance, memory efficiency |
 | **🦆 DuckDB** | In-process analytical database | SQL analytics, OLAP operations |
 | **🔥 FireDucks** | High-performance pandas alternative | Enterprise-scale data processing (Linux/macOS) |
@@ -261,14 +260,12 @@ FILTER_GROUP Operation:
   polars    :   1.55s (x1.0)
   duckdb    :   4.04s (x0.4)
   pandas    :  22.92s (x0.1)
-  modin     :  25.46s (x0.1)
 
 TIMESERIES Operation:
   Fastest: duckdb (5.25s)
   duckdb    :   5.25s (x1.0)
   polars    :   9.04s (x0.6)
   pandas    :  27.26s (x0.2)
-  modin     :  37.55s (x0.1)
 ```
 
 > Note: Polars now uses a fast string-slice hour extraction path when the timestamp column is UTF-8 text, with a fallback to `.dt.hour()` for native datetime data.
@@ -345,7 +342,7 @@ Each benchmark run automatically collects:
 
 ## 📚 Documentation
 
-- **[Technical Details](TECHNICAL.md)**: Deep dive for engineers (Modin setup, architecture, modules)
+- **[Technical Details](TECHNICAL.md)**: Deep dive for engineers (architecture, modules, developer tooling)
 - **[Data Generation](scripts/log-gen/)**: Synthetic dataset creation using `test_generator_01.py`
 - **[Results Analysis](data/)**: CSV output format and analysis guidelines
 
@@ -366,7 +363,7 @@ Parquet is usually smaller and faster to read. Use our helper:
 ### 🧩 Utilities overview
 - `utils/host_info.py`: Collects system details (CPU/mem/Python). Requires `psutil` and optionally `py-cpuinfo`.
 - `utils/data_io.py`: Universal readers and helpers:
-   - `UniversalDataReader`: read CSV/Parquet/JSON/NDJSON via pandas, modin, polars, or DuckDB
+   - `UniversalDataReader`: read CSV/Parquet/JSON/NDJSON via pandas, polars, or DuckDB
    - `DatasetFinder`: locate the best dataset automatically
    - `get_dataset_size(path)`: count records efficiently
 

@@ -403,7 +403,7 @@ def get_safe_int_type(series: pd.Series) -> str:
 def optimize_df_types(df: pd.DataFrame, df_types: dict, copy=True) -> pd.DataFrame:
     """
     Optimize memory usage of DataFrame based on provided types.
-    Works with both pandas and Modin DataFrames.
+    Works with pandas DataFrames.
     """
     if df_types is None:
         return df
@@ -422,7 +422,7 @@ def optimize_df_types(df: pd.DataFrame, df_types: dict, copy=True) -> pd.DataFra
 def optimize_df_types_old( df: pd.DataFrame, df_types: dict) -> pd.DataFrame:
     """
     Optimize memory usage of DataFrame based on provided types.
-    Works with both pandas and Modin DataFrames.
+    Works with pandas DataFrames.
     """
     if df_types is None:
         return df
