@@ -266,8 +266,6 @@ def _get_columns_duckdb(path: Path) -> set:
     try:
         with _duckdb_source.query(path) as (conn, expr):
             # Optimization (2026-05-24): Using fetch_arrow_table() instead of fetchdf()
-            # to eliminate severe pandas conversion overhead.
-            # Optimization (2026-05-24): Using fetch_arrow_table() instead of fetchdf()
             # to eliminate severe pandas conversion overhead. DuckDB can output zero-copy PyArrow tables.
             result = conn.execute(f"SELECT * FROM {expr} LIMIT 1").fetch_arrow_table()
             return set(result.column_names)
@@ -278,8 +276,6 @@ def _run_duckdb_query(sql_builder):
     """Run a DuckDB query using the configured source mode."""
     path = cast(Path, DATASET_PATH)
     with _duckdb_source.query(path) as (conn, expr):
-        # Optimization (2026-05-24): Using fetch_arrow_table() instead of fetchdf()
-        # to eliminate severe pandas conversion overhead.
         # Optimization (2026-05-24): Using fetch_arrow_table() instead of fetchdf()
         # to eliminate severe pandas conversion overhead. DuckDB can output zero-copy PyArrow tables.
         return conn.execute(sql_builder(expr)).fetch_arrow_table()

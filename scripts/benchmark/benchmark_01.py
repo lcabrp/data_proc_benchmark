@@ -460,13 +460,13 @@ def duckdb_filter_group(csv_path: str) -> pd.DataFrame:
     """
     def operation(path: str, conn: duckdb.DuckDBPyConnection) -> pd.DataFrame:
         source = _duckdb_source(path)
+        # Optimization (2026-05-24): Using fetch_arrow_table() instead of fetchdf()
+        # to eliminate severe pandas conversion overhead. DuckDB can output zero-copy PyArrow tables.
         return conn.execute(f"""
             SELECT event_type, COUNT(*) AS count
             FROM {source}
             WHERE bytes > 1000
             GROUP BY event_type
-        # Optimization (2026-05-24): Using fetch_arrow_table() instead of fetchdf()
-        # to eliminate severe pandas conversion overhead. DuckDB can output zero-copy PyArrow tables.
         """).fetch_arrow_table()
     return run_duckdb_operation(operation, csv_path)
 
@@ -482,6 +482,8 @@ def duckdb_statistics(csv_path: str) -> pd.DataFrame:
     """
     def operation(path: str, conn: duckdb.DuckDBPyConnection) -> pd.DataFrame:
         source = _duckdb_source(path)
+        # Optimization (2026-05-24): Using fetch_arrow_table() instead of fetchdf()
+        # to eliminate severe pandas conversion overhead. DuckDB can output zero-copy PyArrow tables.
         return conn.execute(f"""
             SELECT event_type,
                    AVG(bytes) AS bytes_mean, MIN(bytes) AS bytes_min, MAX(bytes) AS bytes_max,
@@ -493,8 +495,6 @@ def duckdb_statistics(csv_path: str) -> pd.DataFrame:
                    MAX(risk_score) AS risk_score_max
             FROM {source}
             GROUP BY event_type
-        # Optimization (2026-05-24): Using fetch_arrow_table() instead of fetchdf()
-        # to eliminate severe pandas conversion overhead. DuckDB can output zero-copy PyArrow tables.
         """).fetch_arrow_table()
     return run_duckdb_operation(operation, csv_path)
 
@@ -510,6 +510,8 @@ def duckdb_complex_join(csv_path: str) -> pd.DataFrame:
     """
     def operation(path: str, conn: duckdb.DuckDBPyConnection) -> pd.DataFrame:
         source = _duckdb_source(path)
+        # Optimization (2026-05-24): Using fetch_arrow_table() instead of fetchdf()
+        # to eliminate severe pandas conversion overhead. DuckDB can output zero-copy PyArrow tables.
         return conn.execute(f"""
             WITH summary AS (
                 SELECT source_ip, SUM(bytes) AS total_bytes
@@ -528,8 +530,6 @@ def duckdb_complex_join(csv_path: str) -> pd.DataFrame:
                 FROM joined
             )
             SELECT * FROM ranked WHERE total_rank <= 10
-        # Optimization (2026-05-24): Using fetch_arrow_table() instead of fetchdf()
-        # to eliminate severe pandas conversion overhead. DuckDB can output zero-copy PyArrow tables.
         """).fetch_arrow_table()
     return run_duckdb_operation(operation, csv_path)
 
@@ -545,6 +545,8 @@ def duckdb_timeseries(csv_path: str) -> pd.DataFrame:
     """
     def operation(path: str, conn: duckdb.DuckDBPyConnection) -> pd.DataFrame:
         source = _duckdb_source(path)
+        # Optimization (2026-05-24): Using fetch_arrow_table() instead of fetchdf()
+        # to eliminate severe pandas conversion overhead. DuckDB can output zero-copy PyArrow tables.
         try:
             return conn.execute(f"""
                 SELECT date_part('hour', CAST(timestamp AS TIMESTAMP)) AS hour,
@@ -552,16 +554,12 @@ def duckdb_timeseries(csv_path: str) -> pd.DataFrame:
                        COUNT(*) AS count
                 FROM {source}
                 GROUP BY hour, event_type
-            # Optimization (2026-05-24): Using fetch_arrow_table() instead of fetchdf()
-            # to eliminate severe pandas conversion overhead. DuckDB can output zero-copy PyArrow tables.
             """).fetch_arrow_table()
         except Exception:
             return conn.execute(f"""
                 SELECT 0 AS hour, event_type, COUNT(*) AS count
                 FROM {source}
                 GROUP BY event_type
-            # Optimization (2026-05-24): Using fetch_arrow_table() instead of fetchdf()
-            # to eliminate severe pandas conversion overhead. DuckDB can output zero-copy PyArrow tables.
             """).fetch_arrow_table()
     return run_duckdb_operation(operation, csv_path)
 
@@ -1040,6 +1038,10 @@ def main():
     parser.add_argument("-d","--dataset", type=str, help="Path to dataset file")
     parser.add_argument("-o","--output", type=str, help="Output CSV file path")
     parser.add_argument("-r","--repeat", type=int, default=1, help="Repeat count per operation")
+    parser.add_argument("--optimize", "-opt",
+                        choices=["auto", "always", "never"],
+                        default="auto",
+                        help="Memory optimization mode: 'auto' (use threshold), 'always' (force), 'never' (disable) (default: auto)")
     parser.add_argument("--prep-memory-report", choices=["off", "shallow", "deep"], default="off",
                         help="Memory accounting during pandas/fireducks prep. Default: off")
     parser.add_argument("--optimized-cache", choices=["off", "read", "write", "readwrite", "refresh"], default="off",

@@ -288,13 +288,13 @@ class ModularBenchmark:
         if not DUCKDB_AVAILABLE:
             return None
         with self.duckdb_source.query(self.dataset_path) as (con, expr):
+            # Optimization (2026-05-24): Using fetch_arrow_table() instead of fetchdf()
+            # to eliminate severe pandas conversion overhead. DuckDB can output zero-copy PyArrow tables.
             return con.execute(f"""
                 SELECT event_type, COUNT(*) AS count
                 FROM {expr}
                 WHERE bytes > 1000
                 GROUP BY event_type
-            # Optimization (2026-05-24): Using fetch_arrow_table() instead of fetchdf()
-            # to eliminate severe pandas conversion overhead. DuckDB can output zero-copy PyArrow tables.
             """).fetch_arrow_table()
     
     def filter_group_fireducks(self, df=None):
@@ -342,6 +342,8 @@ class ModularBenchmark:
         if not DUCKDB_AVAILABLE:
             return None
         with self.duckdb_source.query(self.dataset_path) as (con, expr):
+            # Optimization (2026-05-24): Using fetch_arrow_table() instead of fetchdf()
+            # to eliminate severe pandas conversion overhead. DuckDB can output zero-copy PyArrow tables.
             return con.execute(f"""
                 SELECT event_type,
                        AVG(bytes) AS bytes_mean, MIN(bytes) AS bytes_min, MAX(bytes) AS bytes_max,
@@ -353,8 +355,6 @@ class ModularBenchmark:
                        MAX(risk_score) AS risk_score_max
                 FROM {expr}
                 GROUP BY event_type
-            # Optimization (2026-05-24): Using fetch_arrow_table() instead of fetchdf()
-            # to eliminate severe pandas conversion overhead. DuckDB can output zero-copy PyArrow tables.
             """).fetch_arrow_table()
     
     def statistics_fireducks(self, df=None):
@@ -400,6 +400,8 @@ class ModularBenchmark:
         if not DUCKDB_AVAILABLE:
             return None
         with self.duckdb_source.query(self.dataset_path) as (con, expr):
+            # Optimization (2026-05-24): Using fetch_arrow_table() instead of fetchdf()
+            # to eliminate severe pandas conversion overhead. DuckDB can output zero-copy PyArrow tables.
             return con.execute(f"""
                 WITH summary AS (
                     SELECT source_ip, SUM(bytes) AS total_bytes
@@ -413,8 +415,6 @@ class ModularBenchmark:
                     JOIN summary s USING (source_ip)
                 )
                 SELECT * FROM ranked WHERE total_rank <= 10
-            # Optimization (2026-05-24): Using fetch_arrow_table() instead of fetchdf()
-            # to eliminate severe pandas conversion overhead. DuckDB can output zero-copy PyArrow tables.
             """).fetch_arrow_table()
     
     def complex_join_fireducks(self, df=None):
@@ -465,6 +465,8 @@ class ModularBenchmark:
         if not DUCKDB_AVAILABLE:
             return None
         with self.duckdb_source.query(self.dataset_path) as (con, expr):
+            # Optimization (2026-05-24): Using fetch_arrow_table() instead of fetchdf()
+            # to eliminate severe pandas conversion overhead. DuckDB can output zero-copy PyArrow tables.
             try:
                 return con.execute(f"""
                     SELECT EXTRACT(hour FROM CAST(timestamp AS TIMESTAMP)) AS hour,
@@ -472,16 +474,12 @@ class ModularBenchmark:
                            COUNT(*) AS count
                     FROM {expr}
                     GROUP BY hour, event_type
-                # Optimization (2026-05-24): Using fetch_arrow_table() instead of fetchdf()
-                # to eliminate severe pandas conversion overhead. DuckDB can output zero-copy PyArrow tables.
                 """).fetch_arrow_table()
             except Exception:
                 return con.execute(f"""
                     SELECT 0 AS hour, event_type, COUNT(*) AS count
                     FROM {expr}
                     GROUP BY event_type
-                # Optimization (2026-05-24): Using fetch_arrow_table() instead of fetchdf()
-                # to eliminate severe pandas conversion overhead. DuckDB can output zero-copy PyArrow tables.
                 """).fetch_arrow_table()
     
     def timeseries_fireducks(self, df=None):
