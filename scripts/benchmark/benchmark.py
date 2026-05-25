@@ -4,6 +4,8 @@ import time
 import pandas as pd
 import polars as pl
 import sys
+if sys.stdout.encoding != 'utf-8':
+    sys.stdout.reconfigure(encoding='utf-8')
 import argparse
 import os
 import psutil
@@ -263,8 +265,12 @@ def _get_columns_duckdb(path: Path) -> set:
     """Get column names from file using DuckDB."""
     try:
         with _duckdb_source.query(path) as (conn, expr):
-            result = conn.execute(f"SELECT * FROM {expr} LIMIT 1").fetchdf()
-            return set(result.columns)
+            # Optimization (2026-05-24): Using fetch_arrow_table() instead of fetchdf()
+            # to eliminate severe pandas conversion overhead.
+            # Optimization (2026-05-24): Using fetch_arrow_table() instead of fetchdf()
+            # to eliminate severe pandas conversion overhead. DuckDB can output zero-copy PyArrow tables.
+            result = conn.execute(f"SELECT * FROM {expr} LIMIT 1").fetch_arrow_table()
+            return set(result.column_names)
     except Exception:
         return set()
 
@@ -272,7 +278,11 @@ def _run_duckdb_query(sql_builder):
     """Run a DuckDB query using the configured source mode."""
     path = cast(Path, DATASET_PATH)
     with _duckdb_source.query(path) as (conn, expr):
-        return conn.execute(sql_builder(expr)).fetchdf()
+        # Optimization (2026-05-24): Using fetch_arrow_table() instead of fetchdf()
+        # to eliminate severe pandas conversion overhead.
+        # Optimization (2026-05-24): Using fetch_arrow_table() instead of fetchdf()
+        # to eliminate severe pandas conversion overhead. DuckDB can output zero-copy PyArrow tables.
+        return conn.execute(sql_builder(expr)).fetch_arrow_table()
 
 def _prepare_duckdb_for_benchmark() -> None:
     """Prepare DuckDB for the configured source mode."""
@@ -858,7 +868,7 @@ def main():
     parser.add_argument("--no-csv-dtype-hints", action="store_true",
                         help="Disable pandas/fireducks dtype hints while reading CSV input")
     parser.add_argument("--duckdb-mode", choices=["file", "cached"], default="file",
-                        help="DuckDB source mode: query files directly or load once into a temp table. Default: file")
+                        help="DuckDB source mode: cached mode prevents double-scanning of large files during complex operations (Optimization: 2026-05-24). Default: file")
     args = parser.parse_args()
 
     # Set global optimization settings

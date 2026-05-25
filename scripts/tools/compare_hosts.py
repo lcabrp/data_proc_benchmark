@@ -247,6 +247,7 @@ def _build_meta(
     source: str,
     source_report: Optional[str] = None,
     os_filter: Optional[List[str]] = None,
+    since: Optional[str] = None,
 ) -> Dict:
     csv_stat = _file_stat_safe(csv_path)
     sig = {
@@ -271,6 +272,7 @@ def _build_meta(
             'libs': _norm_libs_arg(libs),
             'tie_threshold_pct': float(tie_threshold_pct),
             'os_filter': _norm_list(os_filter),
+            'since': since,
         },
         # Signature is keyed by hostname so it is orientation-agnostic.
         'signature': sig,
@@ -302,6 +304,7 @@ def _args_match(
     libs: Optional[List[str]],
     tie_threshold_pct: float,
     os_filter: Optional[List[str]] = None,
+    since: Optional[str] = None,
 ) -> bool:
     try:
         a = meta.get('args') or {}
@@ -319,6 +322,8 @@ def _args_match(
         if float(a.get('tie_threshold_pct')) != float(tie_threshold_pct):
             return False
         if _norm_list(a.get('os_filter')) != _norm_list(os_filter):
+            return False
+        if a.get('since') != since:
             return False
         return True
     except Exception:
@@ -1989,6 +1994,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument('--force', action='store_true', help='Force recomputation (ignore any cached JSON/NDJSON report)')
     parser.add_argument('--keep-outliers', action='store_true', help='Keep statistical outliers (by default, outliers are removed using IQR method)')
     parser.add_argument('--os', nargs='+', dest='os_filter', help='Restrict to these OS environments (e.g., Windows WSL2). Case-sensitive. Common values: Windows, Linux, WSL2')
+    parser.add_argument('--since', type=str, help='Filter rows to only include those on or after this ISO date/timestamp (e.g., 2026-05-24)')
 
     args = parser.parse_args(argv)
     if len(args.host) != 2:
@@ -2004,6 +2010,9 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     # Load rows once
     rows = load_rows(args.csv)
+
+    if args.since:
+        rows = [r for r in rows if r.get('timestamp', '') >= args.since]
 
     # Pre-filter rows by OS environment if requested
     if args.os_filter:
@@ -2109,6 +2118,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 libs,
                 args.tie_threshold_pct,
                 args.os_filter,
+                args.since,
             ):
                 continue
             if not _signature_matches(meta, current_sig):
@@ -2182,6 +2192,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         rows_effective=rows_effective,
         source='compute',
         os_filter=args.os_filter,
+        since=args.since,
     )
     if not args.keep_outliers:
         meta['outliers_removed'] = True

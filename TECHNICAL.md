@@ -6,6 +6,7 @@ Deep dive into architecture, library setup, and developer tooling.
 
 - [Overview](#overview)
 - [Benchmark Evolution](#benchmark-evolution)
+- [Optimization Journey](#optimization-journey)
 - [Modules and Utilities](#modules-and-utilities)
 - [Cross-Platform Optimizations](#cross-platform-optimizations)
 - [Data Quality Improvements](#data-quality-improvements)
@@ -168,6 +169,30 @@ Results are tagged in CSV with optimization context:
 - `benchmark.py_no_opt_auto_mem64GB` - Auto mode, not optimized (64GB system)
 
 Removed legacy flags `--csv` and `--results` (previously only in `benchmark_01.py`). Update any local invocation scripts accordingly.
+
+## ⏱ Optimization Journey
+
+Over the course of development, multiple deep architectural optimizations were implemented to tackle specific library bottlenecks and memory constraints when handling the 10M record dataset:
+
+### 1. Unified Memory Optimization
+- **Problem**: Pandas and FireDucks were consuming extreme amounts of memory (often crashing) when loading the 10M record dataset as raw `object` and `float64` types.
+- **Solution**: We implemented `BENCHMARK_OPTIMIZATION_TYPES` to convert column types (e.g., `float64` → `float32`, `object` → `category`) natively. This reduced the DataFrame memory footprint by up to 94% (5.5GB → 334MB) in a single step.
+
+### 2. Read-Time DType Injection (PyArrow Engine)
+- **Problem**: While the memory optimization was effective, *applying* the optimization *after* loading the DataFrame was extremely slow (~12+ seconds).
+- **Solution**: We shifted the conversion to *read time* by passing `engine="pyarrow"` and `dtype_backend="pyarrow"` directly into `pd.read_csv()`. This prevented the data from ever being instantiated in memory as slow `object` types, drastically reducing preparation time.
+
+### 3. File-Based Caching
+- **Problem**: Consecutive benchmark script runs (e.g., running `benchmark_01.py` then `benchmark_02.py`) were paying the heavy price of loading and parsing the raw CSV every single time.
+- **Solution**: We introduced dataset caching (saving the optimized representation to `data/cache/optimized/...`). If an optimized version of the dataset already exists, subsequent runs load it instantaneously from Parquet, bypassing massive amounts of redundant prep work.
+
+### 4. DuckDB Memory Management (OOM Prevention)
+- **Problem**: DuckDB was previously throwing Out-Of-Memory (OOM) errors during heavy aggregation because it was fighting for memory space with the cached Pandas DataFrames holding the 10M records.
+- **Solution**: We isolated the operations, ensuring Pandas dataframes are explicitly garbage collected (`del df; gc.collect()`) before DuckDB runs. We also ensured DuckDB processes had clear memory ceilings.
+
+### 5. DuckDB Complex Join Optimization (Arrow Materialization)
+- **Problem**: DuckDB's `complex_join` was taking ~12-13 seconds, making it the slowest operation by far. However, DuckDB was actually calculating the results instantly but stalling when converting the output back to a Pandas DataFrame using `.fetchdf()`. Additionally, DuckDB was double-scanning the 10M row disk file for self-joins.
+- **Solution**: We introduced `--duckdb-mode cached` to load the file into a temporary memory table, avoiding disk double-scans. Most importantly, we replaced `.fetchdf()` with `.fetch_arrow_table()`, leveraging zero-copy PyArrow materialization. This instantly dropped the execution time from ~13s to ~4s!
 
 ## Modules and Utilities
 
@@ -399,6 +424,11 @@ Recent benchmarking reveals significant performance advantages when using column
 4. **Tool Integration**: Leverage tools like `scripts/tools/csv_to_parquet.py` for format conversion
 
 ## 📈 Performance Analysis
+
+### DuckDB Fetch Mode & Cache Optimization
+When benchmarking DuckDB in memory-bound scenarios (like the 10M record dataset), two critical optimizations were identified and implemented:
+1. **Double Scan Elimination (`--duckdb-mode cached`)**: By default, DuckDB reads directly from the source file (e.g. `read_parquet('...')`). For complex queries involving CTEs or self-joins (like the `complex_join` operation), DuckDB would scan the disk twice, severely degrading performance. Using `--duckdb-mode cached` forces DuckDB to load the file into memory as a `benchmark_source` temporary table, entirely bypassing the double-scan penalty.
+2. **Arrow Materialization (`.fetch_arrow_table()`)**: DuckDB executes queries rapidly, but converting large result sets (e.g., 10M rows from a window function rank tie) back to a `pandas.DataFrame` using `.fetchdf()` introduced up to 7+ seconds of pure overhead. The scripts were updated to use `.fetch_arrow_table()` natively, enabling DuckDB to emit results in zero-copy columnar format and align its reported execution time more closely with pure query performance.
 
 ### Benchmark Results Comparison
 

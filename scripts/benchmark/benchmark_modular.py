@@ -8,6 +8,8 @@ the DRY principle and can be easily adapted for other projects.
 """
 
 import sys
+if sys.stdout.encoding != 'utf-8':
+    sys.stdout.reconfigure(encoding='utf-8')
 import time
 import gc
 import os
@@ -291,7 +293,9 @@ class ModularBenchmark:
                 FROM {expr}
                 WHERE bytes > 1000
                 GROUP BY event_type
-            """).fetchdf()
+            # Optimization (2026-05-24): Using fetch_arrow_table() instead of fetchdf()
+            # to eliminate severe pandas conversion overhead. DuckDB can output zero-copy PyArrow tables.
+            """).fetch_arrow_table()
     
     def filter_group_fireducks(self, df=None):
         """Filter bytes > 1000, group by event_type, count."""
@@ -349,7 +353,9 @@ class ModularBenchmark:
                        MAX(risk_score) AS risk_score_max
                 FROM {expr}
                 GROUP BY event_type
-            """).fetchdf()
+            # Optimization (2026-05-24): Using fetch_arrow_table() instead of fetchdf()
+            # to eliminate severe pandas conversion overhead. DuckDB can output zero-copy PyArrow tables.
+            """).fetch_arrow_table()
     
     def statistics_fireducks(self, df=None):
         """Group by event_type, mean/min/max for bytes, response_time_ms, risk_score."""
@@ -407,7 +413,9 @@ class ModularBenchmark:
                     JOIN summary s USING (source_ip)
                 )
                 SELECT * FROM ranked WHERE total_rank <= 10
-            """).fetchdf()
+            # Optimization (2026-05-24): Using fetch_arrow_table() instead of fetchdf()
+            # to eliminate severe pandas conversion overhead. DuckDB can output zero-copy PyArrow tables.
+            """).fetch_arrow_table()
     
     def complex_join_fireducks(self, df=None):
         """Sum bytes by source_ip, join back, rank by total_bytes per event_type, top 10."""
@@ -464,13 +472,17 @@ class ModularBenchmark:
                            COUNT(*) AS count
                     FROM {expr}
                     GROUP BY hour, event_type
-                """).fetchdf()
+                # Optimization (2026-05-24): Using fetch_arrow_table() instead of fetchdf()
+                # to eliminate severe pandas conversion overhead. DuckDB can output zero-copy PyArrow tables.
+                """).fetch_arrow_table()
             except Exception:
                 return con.execute(f"""
                     SELECT 0 AS hour, event_type, COUNT(*) AS count
                     FROM {expr}
                     GROUP BY event_type
-                """).fetchdf()
+                # Optimization (2026-05-24): Using fetch_arrow_table() instead of fetchdf()
+                # to eliminate severe pandas conversion overhead. DuckDB can output zero-copy PyArrow tables.
+                """).fetch_arrow_table()
     
     def timeseries_fireducks(self, df=None):
         """Extract hour from timestamp, group by (hour, event_type), count."""
@@ -791,7 +803,7 @@ def main():
         "--duckdb-mode",
         choices=["file", "cached"],
         default="file",
-        help="DuckDB file mode scans per operation; cached mode loads once into a temp table.",
+        help="DuckDB file mode scans per operation; cached mode prevents double-scanning of large files during complex operations (Optimization: 2026-05-24).",
     )
     args = parser.parse_args()
     reset_prep_timings()
