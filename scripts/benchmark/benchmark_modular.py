@@ -31,6 +31,7 @@ from utils.data_io import UniversalDataReader, DatasetFinder  # noqa: E402
 from utils.benchmark_prep import (  # noqa: E402
     PREP_COLUMNS,
     append_csv_row_with_schema,
+    decide_memory_optimization,
     get_prep_csv_values,
     load_pandas_like_for_benchmark,
     print_prep_timing,
@@ -114,6 +115,8 @@ class ModularBenchmark:
         optimized_cache_mode: str = "off",
         optimized_cache_dir: Optional[Union[str, Path]] = None,
         use_csv_dtype_hints: bool = True,
+        optimize_mode: str = "auto",
+        memory_threshold_gb: float = 16.0,
         duckdb_mode: str = "file",
     ):
         """Initialize the benchmark with configuration.
@@ -131,6 +134,13 @@ class ModularBenchmark:
             else self.config.project_root / "data" / "cache" / "optimized"
         )
         self.use_csv_dtype_hints = use_csv_dtype_hints
+        self.optimize_mode = optimize_mode
+        self.memory_threshold_gb = memory_threshold_gb
+        self.optimization_decision = decide_memory_optimization(
+            optimize_mode,
+            memory_threshold_gb,
+        )
+        self._optimization_message_printed: set[str] = set()
         self.duckdb_source = DuckDBBenchmarkSource(duckdb_mode)
         self.data_reader = UniversalDataReader(default_library='pandas')
         self.dataset_finder = DatasetFinder(
@@ -189,6 +199,12 @@ class ModularBenchmark:
             'duckdb': DUCKDB_AVAILABLE,
             'fireducks': FIREDUCKS_AVAILABLE
         }
+
+    def _print_optimization_decision_once(self, library: str) -> None:
+        """Print pandas-like optimization decision once per library."""
+        if library not in self._optimization_message_printed:
+            print(f"  {self.optimization_decision.message}")
+            self._optimization_message_printed.add(library)
     
     # Optimization for pandas/fireducks
     def optimize_benchmark_df(self, bdf: pd.DataFrame) -> pd.DataFrame:
@@ -202,11 +218,12 @@ class ModularBenchmark:
         """
         Load and optimize pandas DataFrame once.
         """
+        self._print_optimization_decision_once("pandas")
         df = load_pandas_like_for_benchmark(
             Path(csv_path),
             library="pandas",
             type_map=BENCHMARK_OPTIMIZATION_TYPES,
-            should_optimize=True,
+            should_optimize=self.optimization_decision.should_optimize,
             prep_memory_report=self.prep_memory_report,
             optimized_cache_mode=self.optimized_cache_mode,
             optimized_cache_dir=self.optimized_cache_dir,
@@ -243,11 +260,12 @@ class ModularBenchmark:
         """
         if not FIREDUCKS_AVAILABLE:
             raise RuntimeError("FireDucks not available")
+        self._print_optimization_decision_once("fireducks")
         df = load_pandas_like_for_benchmark(
             Path(csv_path),
             library="fireducks",
             type_map=BENCHMARK_OPTIMIZATION_TYPES,
-            should_optimize=True,
+            should_optimize=self.optimization_decision.should_optimize,
             prep_memory_report=self.prep_memory_report,
             optimized_cache_mode=self.optimized_cache_mode,
             optimized_cache_dir=self.optimized_cache_dir,
@@ -775,6 +793,20 @@ def main():
     parser.add_argument("-d", "--dataset", type=str, help="Path to dataset file (overrides auto-detect)")
     parser.add_argument("-o", "--output", type=str, help="Results CSV output path (default: data/benchmark_results.csv)")
     parser.add_argument(
+        "--optimize",
+        "-opt",
+        choices=["auto", "always", "never"],
+        default="auto",
+        help="Memory optimization mode for pandas/fireducks: auto, always, or never (default: auto).",
+    )
+    parser.add_argument(
+        "--mem-threshold",
+        "-m",
+        type=float,
+        default=16.0,
+        help="Memory threshold in GB for --optimize auto (default: 16).",
+    )
+    parser.add_argument(
         "--prep-memory-report",
         choices=["off", "shallow", "deep"],
         default="off",
@@ -834,6 +866,9 @@ def main():
     print(f"Available libraries: {', '.join(available_libs)}")
     cache_dir_display = args.optimized_cache_dir or (PROJECT_ROOT / "data" / "cache" / "optimized")
     print("Preparation settings:")
+    print(f"  - Optimization mode: {args.optimize}")
+    if args.optimize == "auto":
+        print(f"  - Auto optimization threshold: {args.mem_threshold}GB")
     print(f"  - Prep memory report: {args.prep_memory_report}")
     print(f"  - Optimized cache: {args.optimized_cache} ({cache_dir_display})")
     print(f"  - CSV dtype hints: {'disabled' if args.no_csv_dtype_hints else 'enabled'}")
@@ -847,6 +882,8 @@ def main():
             optimized_cache_mode=args.optimized_cache,
             optimized_cache_dir=args.optimized_cache_dir,
             use_csv_dtype_hints=not args.no_csv_dtype_hints,
+            optimize_mode=args.optimize,
+            memory_threshold_gb=args.mem_threshold,
             duckdb_mode=args.duckdb_mode,
         )
         

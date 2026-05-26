@@ -31,6 +31,7 @@ from utils.data_io import get_dataset_size as universal_dataset_size  # noqa: E4
 from utils.benchmark_prep import (  # noqa: E402
     PREP_COLUMNS,
     append_csv_row_with_schema,
+    decide_memory_optimization,
     get_prep_csv_values,
     load_pandas_like_for_benchmark,
     print_prep_timing,
@@ -51,6 +52,15 @@ def _print_prep_timing(library: str, step: str, start_time: float) -> None:
     print_prep_timing(library, step, start_time)
 
 
+def _should_optimize_for_library(library: str) -> bool:
+    """Return the shared memory optimization decision and print it once."""
+    decision = decide_memory_optimization(OPTIMIZE_MODE, MEMORY_THRESHOLD_GB)
+    if library not in _OPTIMIZATION_MESSAGE_PRINTED:
+        print(f"  {decision.message}")
+        _OPTIMIZATION_MESSAGE_PRINTED.add(library)
+    return decision.should_optimize
+
+
 BENCHMARK_OPTIMIZATION_TYPES = {
     'datetime64[ns]': ['timestamp'],
     'category': ['source_ip', 'destination_ip', 'protocol', 'event_type',
@@ -63,6 +73,9 @@ PREP_MEMORY_REPORT = "off"
 OPTIMIZED_CACHE_MODE = "off"
 OPTIMIZED_CACHE_DIR = Path(project_root) / "data" / "cache" / "optimized"
 USE_CSV_DTYPE_HINTS = True
+OPTIMIZE_MODE = "auto"
+MEMORY_THRESHOLD_GB = 16.0
+_OPTIMIZATION_MESSAGE_PRINTED: set[str] = set()
 DUCKDB_SOURCE = DuckDBBenchmarkSource()
 
 # File format detection and universal reading functions
@@ -202,7 +215,7 @@ def load_and_optimize_pandas(csv_path: str) -> pd.DataFrame:
         Path(csv_path),
         library="pandas",
         type_map=BENCHMARK_OPTIMIZATION_TYPES,
-        should_optimize=True,
+        should_optimize=_should_optimize_for_library("pandas"),
         prep_memory_report=PREP_MEMORY_REPORT,
         optimized_cache_mode=OPTIMIZED_CACHE_MODE,
         optimized_cache_dir=OPTIMIZED_CACHE_DIR,
@@ -242,7 +255,7 @@ def load_and_optimize_fireducks(csv_path: str) -> pd.DataFrame:
         Path(csv_path),
         library="fireducks",
         type_map=BENCHMARK_OPTIMIZATION_TYPES,
-        should_optimize=True,
+        should_optimize=_should_optimize_for_library("fireducks"),
         prep_memory_report=PREP_MEMORY_REPORT,
         optimized_cache_mode=OPTIMIZED_CACHE_MODE,
         optimized_cache_dir=OPTIMIZED_CACHE_DIR,
@@ -748,6 +761,8 @@ if __name__ == "__main__":
                             choices=["auto", "always", "never"],
                             default="auto",
                             help="Memory optimization mode: 'auto' (use threshold), 'always' (force), 'never' (disable) (default: auto)")
+        parser.add_argument("--mem-threshold", "-m", type=float, default=16.0,
+                            help="Memory threshold in GB for --optimize auto (default: 16)")
         parser.add_argument(
             "--prep-memory-report",
             choices=["off", "shallow", "deep"],
@@ -782,6 +797,9 @@ if __name__ == "__main__":
         OPTIMIZED_CACHE_MODE = args.optimized_cache
         OPTIMIZED_CACHE_DIR = args.optimized_cache_dir
         USE_CSV_DTYPE_HINTS = not args.no_csv_dtype_hints
+        OPTIMIZE_MODE = args.optimize
+        MEMORY_THRESHOLD_GB = args.mem_threshold
+        _OPTIMIZATION_MESSAGE_PRINTED = set()
         DUCKDB_SOURCE.set_mode(args.duckdb_mode)
         reset_prep_timings()
 
@@ -821,6 +839,9 @@ if __name__ == "__main__":
         print(f"CPU: {host_info.get('cpu_brand', 'Unknown')} ({host_info.get('cpu_count_logical', 'N/A')} logical cores)")
         print(f"Memory: {host_info.get('memory_total_gb', 'N/A')} GB total")
         print("Preparation settings:")
+        print(f"  - Optimization mode: {OPTIMIZE_MODE}")
+        if OPTIMIZE_MODE == "auto":
+            print(f"  - Auto optimization threshold: {MEMORY_THRESHOLD_GB}GB")
         print(f"  - Prep memory report: {PREP_MEMORY_REPORT}")
         print(f"  - Optimized cache: {OPTIMIZED_CACHE_MODE} ({OPTIMIZED_CACHE_DIR})")
         print(f"  - CSV dtype hints: {'enabled' if USE_CSV_DTYPE_HINTS else 'disabled'}")

@@ -23,6 +23,7 @@ from utils.data_io import read_data, find_dataset, get_dataset_size  # noqa: E40
 from utils.benchmark_prep import (  # noqa: E402
     PREP_COLUMNS,
     append_csv_row_with_schema,
+    decide_memory_optimization,
     get_prep_csv_values,
     load_pandas_like_for_benchmark,
     print_prep_timing,
@@ -78,28 +79,7 @@ def should_optimize_memory() -> bool:
     Returns:
         bool: True if optimization should be applied
     """
-    global _optimize_mode, _memory_threshold_gb
-    
-    # Always optimize if explicitly requested
-    if _optimize_mode == "always":
-        return True
-    
-    # Never optimize if explicitly disabled
-    if _optimize_mode == "never":
-        return False
-    
-    # Auto mode: check system memory against threshold
-    if _optimize_mode == "auto":
-        try:
-            total_memory_gb = psutil.virtual_memory().total / (1024**3)
-            should_optimize = total_memory_gb < _memory_threshold_gb
-            return should_optimize
-        except Exception:
-            # If we can't determine memory, default to optimization for safety
-            return True
-    
-    # Fallback to auto behavior
-    return True
+    return decide_memory_optimization(_optimize_mode, _memory_threshold_gb).should_optimize
 
 def load_and_optimize_for_library(library: str):
     """
@@ -128,22 +108,12 @@ def load_and_optimize_for_library(library: str):
     
     try:
         # Check if memory optimization should be applied
-        should_optimize = should_optimize_memory()
+        optimization_decision = decide_memory_optimization(_optimize_mode, _memory_threshold_gb)
+        should_optimize = optimization_decision.should_optimize
         
         # Show memory optimization decision
         if library in ["pandas", "fireducks"]:
-            try:
-                total_memory_gb = psutil.virtual_memory().total / (1024**3)
-                if _optimize_mode == "always":
-                    print(f"  System has {total_memory_gb:.1f}GB RAM - optimization FORCED via --optimize always")
-                elif _optimize_mode == "never":
-                    print(f"  System has {total_memory_gb:.1f}GB RAM - optimization DISABLED via --optimize never")
-                elif should_optimize:
-                    print(f"  System has {total_memory_gb:.1f}GB RAM (< {_memory_threshold_gb}GB threshold) - applying optimization")
-                else:
-                    print(f"  System has {total_memory_gb:.1f}GB RAM (≥ {_memory_threshold_gb}GB threshold) - skipping optimization")
-            except Exception:
-                print("  Could not determine system memory - applying optimization for safety")
+            print(f"  {optimization_decision.message}")
 
         if library in ["pandas", "fireducks"]:
             df = load_pandas_like_for_benchmark(

@@ -6,6 +6,7 @@ import csv
 import hashlib
 import json
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, Optional
 
@@ -21,6 +22,15 @@ PREP_COLUMNS = [
 ]
 
 _prep_timings: Dict[str, Dict[str, float]] = {}
+
+
+@dataclass(frozen=True)
+class MemoryOptimizationDecision:
+    """Decision and display text for pandas-like dtype optimization."""
+
+    should_optimize: bool
+    total_memory_gb: Optional[float]
+    message: str
 
 
 def reset_prep_timings() -> None:
@@ -74,6 +84,63 @@ def memory_usage_bytes(df: pd.DataFrame, mode: str) -> Optional[int]:
     if mode == "deep":
         return int(df.memory_usage(deep=True).sum())
     raise ValueError(f"Unsupported prep memory report mode: {mode}")
+
+
+def decide_memory_optimization(
+    optimize_mode: str,
+    memory_threshold_gb: float,
+) -> MemoryOptimizationDecision:
+    """Resolve auto/always/never memory optimization behavior in one place."""
+    if optimize_mode not in {"auto", "always", "never"}:
+        raise ValueError(f"Unsupported optimization mode: {optimize_mode}")
+
+    total_memory_gb: Optional[float]
+    try:
+        import psutil
+
+        total_memory_gb = psutil.virtual_memory().total / (1024**3)
+    except Exception:
+        total_memory_gb = None
+
+    memory_label = (
+        f"{total_memory_gb:.1f}GB RAM"
+        if total_memory_gb is not None
+        else "unknown system memory"
+    )
+
+    if optimize_mode == "always":
+        return MemoryOptimizationDecision(
+            True,
+            total_memory_gb,
+            f"System has {memory_label} - optimization FORCED via --optimize always",
+        )
+
+    if optimize_mode == "never":
+        return MemoryOptimizationDecision(
+            False,
+            total_memory_gb,
+            f"System has {memory_label} - optimization DISABLED via --optimize never",
+        )
+
+    if total_memory_gb is None:
+        return MemoryOptimizationDecision(
+            True,
+            None,
+            "Could not determine system memory - applying optimization for safety",
+        )
+
+    if total_memory_gb < memory_threshold_gb:
+        return MemoryOptimizationDecision(
+            True,
+            total_memory_gb,
+            f"System has {total_memory_gb:.1f}GB RAM (< {memory_threshold_gb}GB threshold) - applying optimization",
+        )
+
+    return MemoryOptimizationDecision(
+        False,
+        total_memory_gb,
+        f"System has {total_memory_gb:.1f}GB RAM (>= {memory_threshold_gb}GB threshold) - skipping optimization",
+    )
 
 
 def csv_read_kwargs_for_types(type_map: dict) -> dict:
