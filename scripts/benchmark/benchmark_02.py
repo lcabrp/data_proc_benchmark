@@ -849,7 +849,7 @@ if __name__ == "__main__":
                 print(f"  Fastest: {fastest[0]} ({fastest[1]:.4f}s)")
                 for lib, duration in sorted(valid_timings.items(), key=lambda x: x[1]):
                     speedup = fastest[1] / duration if duration > 0 else 0
-                    print(f"  {lib:10}: {duration:6.4f}s (x{speedup:.1f})")
+                    print(f"  {lib:10}: {duration:6.4f}s (x{speedup:.4f})")
             else:
                 print("  No valid timings to compare (all skipped or failed).")
 
