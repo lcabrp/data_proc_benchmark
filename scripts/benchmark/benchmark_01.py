@@ -46,6 +46,7 @@ from utils.benchmark_prep import (  # noqa: E402
     reset_prep_timings,
 )
 from utils.duckdb_utils import DuckDBBenchmarkSource, duckdb_table_expr  # noqa: E402
+from utils.pandas_benchmark_ops import complex_join_top_ranked, timeseries_hour_counts  # noqa: E402
 from utils.platform_utils import FIREDUCKS_AVAILABLE  # noqa: E402
 
 if FIREDUCKS_AVAILABLE:
@@ -312,13 +313,7 @@ def pandas_complex_join(csv_path: str, cached_df: Optional[pd.DataFrame] = None)
         pd.DataFrame: Top 10 ranked rows, or None if required columns missing.
     """
     def op(df: pd.DataFrame) -> Optional[pd.DataFrame]:
-        req = {"source_ip", "bytes", "event_type"}
-        if not req.issubset(df.columns):
-            return None
-        summary = df.groupby("source_ip", observed=False)["bytes"].sum().reset_index().rename(columns={"bytes": "total_bytes"})
-        merged = df.merge(summary, on="source_ip", how="left")
-        merged["total_rank"] = merged.groupby("event_type", observed=False)["total_bytes"].rank(method="dense", ascending=False)
-        return merged.loc[merged["total_rank"] <= 10]
+        return complex_join_top_ranked(df, rank_col="total_rank", observed=False)
     return run_pandas_operation(op, csv_path, cached_df)
 
 def pandas_timeseries(csv_path: str, cached_df: Optional[pd.DataFrame] = None) -> pd.Series:
@@ -333,16 +328,7 @@ def pandas_timeseries(csv_path: str, cached_df: Optional[pd.DataFrame] = None) -
         pd.Series: Grouped counts, or None if required columns missing.
     """
     def op(df: pd.DataFrame) -> Optional[pd.Series]:
-        if "event_type" not in df.columns:
-            return None
-        work = df.copy()
-        if "timestamp" in work.columns:
-            ts = pd.to_datetime(work["timestamp"], errors="coerce")
-            hour = ts.dt.hour
-        else:
-            hour = 0
-        work = work.assign(_hour=hour)
-        return work.groupby(["_hour", "event_type"], observed=False).size()
+        return timeseries_hour_counts(df, observed=False, reset_index=False, hour_name="_hour")
     return run_pandas_operation(op, csv_path, cached_df)
 
 # ----------------- Polars -----------------
@@ -628,13 +614,7 @@ if FIREDUCKS_AVAILABLE:
             pd.DataFrame: Top 10 ranked rows, or None if required columns missing.
         """
         def op(df: pd.DataFrame) -> Optional[pd.DataFrame]:
-            req = {"source_ip", "bytes", "event_type"}
-            if not req.issubset(df.columns):
-                return None
-            summary = df.groupby("source_ip")["bytes"].sum().reset_index().rename(columns={"bytes": "total_bytes"})
-            merged = df.merge(summary, on="source_ip", how="left")
-            merged["total_rank"] = merged.groupby("event_type")["total_bytes"].rank(method="dense", ascending=False)
-            return merged[merged["total_rank"] <= 10]
+            return complex_join_top_ranked(df, rank_col="total_rank", observed=False)
         return run_pandas_operation(op, csv_path, cached_df)
 
     def fireducks_timeseries(csv_path: str, cached_df: Optional[pd.DataFrame] = None) -> pd.Series:
@@ -649,15 +629,7 @@ if FIREDUCKS_AVAILABLE:
             pd.Series: Grouped counts, or None if required columns missing.
         """
         def op(df: pd.DataFrame) -> Optional[pd.Series]:
-            if "event_type" not in df.columns:
-                return None
-            if "timestamp" in df.columns:
-                ts = pd.to_datetime(df["timestamp"], errors="coerce")
-                hour = ts.dt.hour
-            else:
-                hour = 0
-            tmp = df.assign(_hour=hour)
-            return tmp.groupby(["_hour", "event_type"]).size()
+            return timeseries_hour_counts(df, observed=False, reset_index=False, hour_name="_hour")
         return run_pandas_operation(op, csv_path, cached_df)
 
 def run_benchmark_operation(library_name: str,

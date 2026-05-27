@@ -40,6 +40,7 @@ from utils.benchmark_prep import (  # noqa: E402
 )
 from utils.duckdb_utils import DuckDBBenchmarkSource, duckdb_table_expr  # noqa: E402
 from utils.host_info import get_host_info  # noqa: E402
+from utils.pandas_benchmark_ops import complex_join_top_ranked, timeseries_hour_counts  # noqa: E402
 from utils.useful_functions import optimize_df_types  # noqa: E402
 
 # Import platform detection with all libraries and flags
@@ -392,13 +393,7 @@ class ModularBenchmark:
         """Sum bytes by source_ip, join back, rank by total_bytes per event_type, top 10."""
         if df is None:
             df = self.load_and_optimize_pandas(str(self.dataset_path))
-        req = {"source_ip", "bytes", "event_type"}
-        if not req.issubset(df.columns):
-            return None
-        summary = df.groupby("source_ip", observed=False)["bytes"].sum().reset_index().rename(columns={"bytes": "total_bytes"})
-        merged = df.merge(summary, on="source_ip", how="left")
-        merged["total_rank"] = merged.groupby("event_type", observed=False)["total_bytes"].rank(method="dense", ascending=False)
-        return merged.loc[merged["total_rank"] <= 10]
+        return complex_join_top_ranked(df, rank_col="total_rank", observed=False)
     
     def complex_join_polars(self, df=None):
         """Sum bytes by source_ip, join back, rank by total_bytes per event_type, top 10."""
@@ -439,28 +434,13 @@ class ModularBenchmark:
         """Sum bytes by source_ip, join back, rank by total_bytes per event_type, top 10."""
         if df is None:
             df = self.load_and_optimize_fireducks(str(self.dataset_path))
-        req = {"source_ip", "bytes", "event_type"}
-        if not req.issubset(df.columns):
-            return None
-        summary = df.groupby("source_ip")["bytes"].sum().reset_index().rename(columns={"bytes": "total_bytes"})
-        merged = df.merge(summary, on="source_ip", how="left")
-        merged["total_rank"] = merged.groupby("event_type")["total_bytes"].rank(method="dense", ascending=False)
-        return merged[merged["total_rank"] <= 10]
+        return complex_join_top_ranked(df, rank_col="total_rank", observed=False)
     
     def timeseries_pandas(self, df=None):
         """Extract hour from timestamp, group by (hour, event_type), count."""
         if df is None:
             df = self.load_and_optimize_pandas(str(self.dataset_path))
-        if "event_type" not in df.columns:
-            return None
-        work = df.copy()
-        if "timestamp" in work.columns:
-            ts = pd.to_datetime(work["timestamp"], errors="coerce")
-            hour = ts.dt.hour
-        else:
-            hour = 0
-        work = work.assign(_hour=hour)
-        return work.groupby(["_hour", "event_type"], observed=False).size()
+        return timeseries_hour_counts(df, observed=False, reset_index=False, hour_name="_hour")
     
     def timeseries_polars(self, df=None):
         """Extract hour from timestamp, group by (hour, event_type), count."""
@@ -504,15 +484,7 @@ class ModularBenchmark:
         """Extract hour from timestamp, group by (hour, event_type), count."""
         if df is None:
             df = self.load_and_optimize_fireducks(str(self.dataset_path))
-        if "event_type" not in df.columns:
-            return None
-        if "timestamp" in df.columns:
-            ts = pd.to_datetime(df["timestamp"], errors="coerce")
-            hour = ts.dt.hour
-        else:
-            hour = 0
-        tmp = df.assign(_hour=hour)
-        return tmp.groupby(["_hour", "event_type"]).size()
+        return timeseries_hour_counts(df, observed=False, reset_index=False, hour_name="_hour")
     
     def run_all_benchmarks(self) -> List[Dict[str, Any]]:
         """

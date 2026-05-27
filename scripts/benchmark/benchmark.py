@@ -32,6 +32,7 @@ from utils.benchmark_prep import (  # noqa: E402
 )
 from utils.duckdb_utils import DuckDBBenchmarkSource  # noqa: E402
 from utils.host_info import get_host_info  # noqa: E402
+from utils.pandas_benchmark_ops import complex_join_top_ranked, timeseries_hour_counts  # noqa: E402
 from utils.useful_functions import optimize_df_types  # noqa: E402
 from utils.platform_utils import FIREDUCKS_AVAILABLE  # noqa: E402
 
@@ -384,25 +385,7 @@ def pandas_complex():
     df = get_current_data()
     if df is None:
         return None
-    
-    if 'source_ip' not in df.columns or 'bytes' not in df.columns or 'event_type' not in df.columns:
-        return None
-    
-    # Step 1: Create summary by source_ip
-    summary = df.groupby('source_ip')['bytes'].sum().reset_index()
-    summary.rename(columns={'bytes': 'total_bytes'}, inplace=True)
-    
-    # Step 2: Join back to original data
-    result = df.merge(summary, on='source_ip')
-    
-    # Step 3: Add rank by total_bytes within each event_type (descending)
-    result['bytes_rank'] = result.groupby('event_type', observed=False)['total_bytes'].rank(
-        method='dense',
-        ascending=False,
-    )
-    
-    # Step 4: Return top 10 ranks only
-    return result[result['bytes_rank'] <= 10].sort_values('bytes_rank')
+    return complex_join_top_ranked(df, rank_col="bytes_rank", observed=False, sort_by_rank=True)
 
 def polars_complex():
     df = get_current_data()
@@ -455,21 +438,7 @@ def fireducks_complex():
     df = get_current_data()
     if df is None:
         return None
-    
-    if 'source_ip' not in df.columns or 'bytes' not in df.columns or 'event_type' not in df.columns:
-        return None
-    
-    # Exact same operation as pandas
-    summary = df.groupby('source_ip')['bytes'].sum().reset_index()
-    summary.rename(columns={'bytes': 'total_bytes'}, inplace=True)
-    
-    result = df.merge(summary, on='source_ip')
-    result['bytes_rank'] = result.groupby('event_type')['total_bytes'].rank(
-        method='dense',
-        ascending=False,
-    )
-    
-    return result[result['bytes_rank'] <= 10].sort_values('bytes_rank')
+    return complex_join_top_ranked(df, rank_col="bytes_rank", observed=False, sort_by_rank=True)
 
 # Operation 4: Time Series Analysis
 # Task: Extract hour from timestamp, group by hour and event_type, count occurrences
@@ -477,15 +446,7 @@ def pandas_timeseries():
     df = get_current_data()
     if df is None:
         return None
-    
-    if 'timestamp' not in df.columns or 'event_type' not in df.columns:
-        return None
-    
-    df_copy = df.copy()  # Don't modify cached data
-    df_copy['timestamp'] = pd.to_datetime(df_copy['timestamp'], errors='coerce')
-    df_copy['hour'] = df_copy['timestamp'].dt.hour
-    
-    return df_copy.groupby(['hour', 'event_type']).size().reset_index(name='count')
+    return timeseries_hour_counts(df, observed=False, reset_index=True, hour_name="hour")
 
 def polars_timeseries():
     df = get_current_data()
@@ -526,16 +487,7 @@ def fireducks_timeseries():
     df = get_current_data()
     if df is None:
         return None
-    
-    if 'timestamp' not in df.columns or 'event_type' not in df.columns:
-        return None
-    
-    # Exact same operation as pandas
-    df_copy = df.copy()  # Don't modify cached data
-    df_copy['timestamp'] = pd.to_datetime(df_copy['timestamp'], errors='coerce')
-    df_copy['hour'] = df_copy['timestamp'].dt.hour
-    
-    return df_copy.groupby(['hour', 'event_type']).size().reset_index(name='count')
+    return timeseries_hour_counts(df, observed=False, reset_index=True, hour_name="hour")
 
 # Benchmark execution
 def run_benchmark_operation(library_name, operation_func, operation_name):
