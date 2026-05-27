@@ -220,6 +220,5 @@ data/benchmark_results_archived_*.csv
 data/benchmark_results_pre_*.csv
 data/cache/
 
-# Exclude comprisons
-#data/results/compare*.*
-#data/custom_results/compare*.*
+# Exclude Python version - 5/27/2026(Avoiding uv issues between W11 and WSL versions)
+.pyhon-version

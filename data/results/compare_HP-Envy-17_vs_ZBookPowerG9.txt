@@ -1,9 +1,0 @@
-Cache: HIT (reusing data\results\compare_HP-Envy-17_vs_ZBookPowerG9.json)
-Source: cache (data\results\compare_HP-Envy-17_vs_ZBookPowerG9.json)
-Winner: ZBookPowerG9 (~5.32% faster overall)
-
-== Outlier Removal (IQR Method) ==
-HP-Envy-17: 2 outliers removed (14/16 rows retained)
-ZBookPowerG9: 2 outliers removed (14/16 rows retained)
-
-== Memory Configuration Note ==
