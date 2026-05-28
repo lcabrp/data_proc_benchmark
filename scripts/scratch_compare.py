@@ -12,17 +12,12 @@ DATASET_SIZE = 10_000_000
 VENV_PYTHON = PROJECT_ROOT / ".venv" / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
 PYTHON_EXE = VENV_PYTHON if VENV_PYTHON.exists() else Path(sys.executable)
 
-target = "IdeaPadS340"
+target = "ZBookPowerG9-01"
 compare_to = [
-    "HP-EB840G8-01",
-    "HP-EB830G8-01",
-    "HP-EB830G6-01",
-    "HP-EB830G6-02",
     "WL5040",
     "ZBookStudioG8",
-    "WL1030",
-    "HP-EB-G6-SJ",
-    "ThinkBook"
+    "ZBookPowerG9-02",
+    "IdeaPadPro5i-2"
 ]
 
 results = []
@@ -131,6 +126,8 @@ for r in results:
         print(f"  Pandas diff: {fmt_lib(libs_pct.get('pandas'))}")
         print(f"  Polars diff: {fmt_lib(libs_pct.get('polars'))}")
         print(f"  DuckDB diff: {fmt_lib(libs_pct.get('duckdb'))}")
+        if 'fireducks' in libs_pct:
+            print(f"  FireDucks diff: {fmt_lib(libs_pct.get('fireducks'))}")
     
     print("")
 

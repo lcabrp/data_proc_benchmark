@@ -624,30 +624,34 @@ def summarize_host(rows: List[Dict[str, str]], lib_ops: Dict[str, List[str]]) ->
 
 
 def relative_pct(a: Optional[float], b: Optional[float]) -> Optional[float]:
-    """Calculate percentage difference from a to b.
+    """Calculate the symmetric percentage difference between two durations.
     
-    Formula: (a - b) / a * 100
+    To ensure mathematical consistency, fairness, and symmetric results, we
+    always use the slower machine's duration as the divisor. This guarantees:
+    1. The percentage represents the actual duration reduction (time saved) of
+       the faster machine relative to the slower machine.
+    2. The percentage is naturally bounded between -100% and +100%.
+    3. The function is perfectly symmetric: relative_pct(a, b) == -relative_pct(b, a),
+       which ensures report reorientation (swapping hosts) is mathematically correct.
     
     Args:
-        a: Baseline value (typically host A's timing)
-        b: Comparison value (typically host B's timing)
+        a: Timing of host A
+        b: Timing of host B
         
     Returns:
-        Percentage difference where:
-        - Positive value means b is faster (duration decreased)
-        - Negative value means b is slower (duration increased)
-        - None if either value is None or a is zero
-        
-    Example:
-        >>> relative_pct(10.0, 8.0)  # b is 20% faster
-        20.0
-        >>> relative_pct(8.0, 10.0)  # b is 25% slower
-        -25.0
+        Positive value if b is faster (time saved compared to a)
+        Negative value if b is slower (time lost compared to a)
     """
-    # Percent change from a -> b: (a-b)/a*100; negative means b is faster if values are durations
-    if a is None or b is None or a == 0:
+    if a is None or b is None or a == 0 or b == 0:
         return None
-    return (a - b) / a * 100.0
+    if a == b:
+        return 0.0
+    
+    slower = max(a, b)
+    diff = abs(a - b)
+    sign = 1.0 if b < a else -1.0
+    return sign * (diff / slower) * 100.0
+
 
 
 def detect_memory_configs(rows: List[Dict[str, str]]) -> Dict[str, int]:
