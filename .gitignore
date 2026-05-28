@@ -221,4 +221,4 @@ data/benchmark_results_pre_*.csv
 data/cache/
 
 # Exclude Python version - 5/27/2026(Avoiding uv issues between W11 and WSL versions)
-.pyhon-version
+.python-version
