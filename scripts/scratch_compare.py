@@ -12,13 +12,30 @@ DATASET_SIZE = 10_000_000
 VENV_PYTHON = PROJECT_ROOT / ".venv" / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
 PYTHON_EXE = VENV_PYTHON if VENV_PYTHON.exists() else Path(sys.executable)
 
-target = "ZBookPowerG9-01"
-compare_to = [
-    "WL5040",
-    "ZBookStudioG8",
-    "ZBookPowerG9-02",
-    "IdeaPadPro5i-2"
+my_base_laptop = "ZBookPowerG9-01" # i7-12700H
+contender_laptops = [
+    "WL5040", # AMD Ryzen 8940HS
+    "ZBookStudioG8", # i7-11850H
+    "ZBookPowerG9-02", # i7-12800H
+    "IdeaPadPro5i-2", # Core Ultra 285H
+    "IdeaPadPro5i", # Core Ultra 185H
+    "Legion7-16IRX9" # i9-14900HX
 ]
+
+my_base_desktop = "HP-Z2-G9" # i9-12900
+contender_desktops = [
+    "OptPlex-7020-3" # i5-14600
+]
+
+my_older_laptop = "IdeaPadS340" # i7-1065G7
+business_laptops = [
+    "WL5022" # i7-1185G7
+]
+workstation_laptops = []
+
+
+target = my_older_laptop
+compare_to = business_laptops
 
 results = []
 errors = []
@@ -26,6 +43,8 @@ RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
 for host in compare_to:
     json_path = RESULTS_DIR / f"compare_{target}_vs_{host}.json"
+    # Use --since 2026-01-01 to prevent historical 2025 runs (which may contain outdated library versions
+    # or system anomalies) from contaminating active 2026 benchmark comparisons.
     cmd = [
         str(PYTHON_EXE),
         str(COMPARE_SCRIPT),
@@ -33,6 +52,7 @@ for host in compare_to:
         "--host", target,
         "--host", host,
         "--dataset-size", str(DATASET_SIZE),
+        # "--since", "2026-01-01",  # Not needed for now since I deleted older results
         "--json-out", str(json_path),
         "--force"
     ]

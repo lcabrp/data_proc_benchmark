@@ -911,13 +911,13 @@
   ],
   "meta": {
     "version": 2,
-    "generated_at_utc": "2026-05-28T12:51:27.497246+00:00",
+    "generated_at_utc": "2026-05-30T12:39:51.840712+00:00",
     "generated_via": "compute",
     "source_report": null,
     "csv": {
       "path": "E:\\lcabr\\Documents\\Projects\\data-proc-benchmark\\data\\benchmark_results.csv",
-      "size_bytes": 615381,
-      "mtime_epoch": 1779972082.2201173
+      "size_bytes": 628298,
+      "mtime_epoch": 1780144647.1376436
     },
     "args": {
       "hosts": [
@@ -931,7 +931,7 @@
       "libs": null,
       "tie_threshold_pct": 5.0,
       "os_filter": null,
-      "since": null
+      "since": "2026-01-01"
     },
     "signature": {
       "ZBookPowerG9-01": {
