@@ -28,13 +28,14 @@ contender_desktops = [
 ]
 
 my_older_laptop = "IdeaPadS340" # i7-1065G7
+base_bussiness_laptop = "WL1111" # i7-8656U
 business_laptops = [
     "WL5022" # i7-1185G7
 ]
 workstation_laptops = []
 
 
-target = my_older_laptop
+target = base_bussiness_laptop
 compare_to = business_laptops
 
 results = []
