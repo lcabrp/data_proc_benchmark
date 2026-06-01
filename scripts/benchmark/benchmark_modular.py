@@ -52,6 +52,9 @@ from utils.platform_utils import (  # noqa: E402
 )
 
 import pandas as pd  # noqa: E402
+# Enable global Pandas 3.0 future defaults for optimized memory and speed
+pd.options.mode.copy_on_write = True
+pd.options.future.infer_string = True
 
 # Import optional libraries based on platform detection
 

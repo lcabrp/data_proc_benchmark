@@ -222,73 +222,32 @@ def load_pandas_like_for_benchmark(
     optimized_cache_dir: Path,
     use_dtype_hints: bool = True,
 ) -> pd.DataFrame:
-    """Load, optionally optimize, and optionally cache a pandas-like DataFrame."""
+    """Load, optionally optimize, and optionally cache a pandas-like DataFrame using CleanFlow."""
+    import cleanflow
+    
     prep_start = time.perf_counter()
-    cache_path = optimized_cache_path(source_path, optimized_cache_dir, type_map)
-    can_read_cache = optimized_cache_mode in {"read", "readwrite"} and cache_path.exists()
-
-    if can_read_cache:
-        step_start = time.perf_counter()
-        df = _read_with_pandas_like(
-            cache_path,
-            library=library,
-            type_map=type_map,
-            use_dtype_hints=False,
-        )
-        print_prep_timing(library, "read/load optimized cache", step_start)
-        print(f"  {library} loaded optimized cache: {cache_path}")
-        print_prep_timing(library, "total load/optimization", prep_start)
-        return df
-
-    step_start = time.perf_counter()
-    df = _read_with_pandas_like(
+    
+    # Caching check
+    use_cache = optimized_cache_mode in {"read", "readwrite", "refresh"}
+    
+    # Load dataset using CleanFlow's high-performance loader with read-time dtypes and transparent cache
+    df = cleanflow.io.load_dataset(
         source_path,
-        library=library,
-        type_map=type_map,
+        engine="pandas" if library in {"pandas", "fireducks"} else library,
+        type_map=type_map if should_optimize else None,
         use_dtype_hints=use_dtype_hints,
+        cache=use_cache,
+        cache_dir=optimized_cache_dir,
     )
-    print_prep_timing(library, "read/load", step_start)
-
-    if not should_optimize:
-        print(f"  {library} DataFrame loaded without memory optimization")
-        print_prep_timing(library, "total load/optimization", prep_start)
-        return df
-
-    original_memory = None
-    if prep_memory_report != "off":
-        step_start = time.perf_counter()
-        original_memory = memory_usage_bytes(df, prep_memory_report)
-        print_prep_timing(library, f"{prep_memory_report} memory before optimization", step_start)
-
-    step_start = time.perf_counter()
-    optimized_df = optimize_df_types(df, type_map, False)
-    print_prep_timing(library, "dtype optimization", step_start)
-
-    optimized_memory = None
-    if prep_memory_report != "off":
-        step_start = time.perf_counter()
-        optimized_memory = memory_usage_bytes(optimized_df, prep_memory_report)
-        print_prep_timing(library, f"{prep_memory_report} memory after optimization", step_start)
-
-    if original_memory and optimized_memory:
-        memory_reduction = (original_memory - optimized_memory) / original_memory * 100
-        if memory_reduction > 1:
-            print(
-                f"  {library} DataFrame optimized: {memory_reduction:.1f}% memory reduction "
-                f"({original_memory / 1024 / 1024:.1f}MB -> {optimized_memory / 1024 / 1024:.1f}MB)"
-            )
-    else:
-        print(f"  {library} DataFrame optimized")
-
-    if optimized_cache_mode in {"write", "readwrite", "refresh"}:
-        optimized_cache_dir.mkdir(parents=True, exist_ok=True)
-        step_start = time.perf_counter()
-        optimized_df.to_parquet(cache_path, index=False)
-        print_prep_timing(library, "write optimized cache", step_start)
-        print(f"  {library} wrote optimized cache: {cache_path}")
-
+    
+    # FireDucks handling
+    if library == "fireducks":
+        import fireducks.pandas as fpd
+        if not isinstance(df, fpd.DataFrame):
+            df = fpd.DataFrame(df)
+            
     print_prep_timing(library, "total load/optimization", prep_start)
-    return optimized_df
+    return df
 
 
 def append_csv_row_with_schema(path: Path, header: Iterable[str], row: Iterable[Any]) -> None:

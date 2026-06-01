@@ -2,6 +2,9 @@
 import gc
 import time
 import pandas as pd
+# Enable global Pandas 3.0 future defaults for optimized memory and speed
+pd.options.mode.copy_on_write = True
+pd.options.future.infer_string = True
 import polars as pl
 import sys
 if sys.stdout.encoding != 'utf-8':

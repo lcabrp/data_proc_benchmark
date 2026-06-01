@@ -25,6 +25,7 @@ contender_laptops = [
 my_base_desktop = "HP-Z2-G9" # i9-12900
 contender_desktops = [
     "OptPlex-7020-3" # i5-14600
+    ,"TS-P350-01" # i7-11700
 ]
 
 my_older_laptop = "IdeaPadS340" # i7-1065G7
@@ -35,8 +36,8 @@ business_laptops = [
 workstation_laptops = []
 
 
-target = base_bussiness_laptop
-compare_to = business_laptops
+target = my_base_desktop
+compare_to = contender_desktops
 
 results = []
 errors = []
