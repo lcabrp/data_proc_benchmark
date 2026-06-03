@@ -36,8 +36,8 @@ business_laptops = [
 workstation_laptops = []
 
 
-target = my_base_desktop
-compare_to = contender_desktops
+target = my_base_laptop
+compare_to = contender_laptops
 
 results = []
 errors = []
