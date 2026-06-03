@@ -26,6 +26,9 @@ This benchmark tests popular data processing libraries against multi‑million r
 
 ## 🚀 Quick Start
 
+> [!IMPORTANT]
+> **CleanFlow is a required dependency.** This project uses the [cleanflow](https://github.com/lcabrp/cleanflow) sibling library as its core data loading and optimization engine. You must clone and link it before the benchmark scripts will run. See the [CleanFlow Setup](#-cleanflow-setup-required) section below.
+
 ### 📦 Method 1: Using uv (Recommended)
 
 **uv** is a lightning-fast Python package manager that makes setup incredibly quick.
@@ -51,7 +54,18 @@ This benchmark tests popular data processing libraries against multi‑million r
    # If 'uv' command not found, use: python -m uv sync
    ```
 
-3. **Run the Modular Benchmark**:
+3. **Install CleanFlow (required sibling library)**:
+   ```bash
+   # Clone cleanflow into the same parent directory as data-proc-benchmark
+   git clone https://github.com/lcabrp/cleanflow ../cleanflow
+
+   # Link it as an editable install into this project's virtual environment
+   uv pip install -e ../cleanflow
+   ```
+   > The `-e` flag installs CleanFlow in **editable mode**: any changes you make to the
+   > CleanFlow source are reflected immediately without reinstalling.
+
+4. **Run the Modular Benchmark**:
    ```bash
    uv run python scripts/benchmark/benchmark_modular.py
    # If 'uv' is not on PATH:
@@ -87,7 +101,16 @@ If you prefer the traditional Python workflow:
    pip install psutil
    ```
 
-4. **Run the Benchmark (PowerShell on Windows)**:
+4. **Install CleanFlow (required sibling library)**:
+   ```bash
+   # Clone cleanflow into the same parent directory as data-proc-benchmark
+   git clone https://github.com/lcabrp/cleanflow ../cleanflow
+
+   # Link it as an editable install into the active virtual environment
+   pip install -e ../cleanflow
+   ```
+
+5. **Run the Benchmark (PowerShell on Windows)**:
    ```powershell
    .\.venv\Scripts\python scripts/benchmark/benchmark_modular.py
    ```
@@ -236,6 +259,71 @@ The host comparison tool automatically removes statistical outliers by default t
 - The 1.5× multiplier is the standard Tukey method used in statistical analysis and box plots
 - Outlier detection runs per-library to catch issues specific to individual libraries
 
+---
+
+## 🔗 CleanFlow Setup (Required)
+
+`data-proc-benchmark` depends on [**cleanflow**](https://github.com/lcabrp/cleanflow), a sibling library that provides:
+- Read-time dtype hints (category, uint32, datetime64) for fast CSV and Parquet loading
+- Transparent **optimized Parquet caching** — load once, hit the cache on every subsequent run
+- PyArrow-backed CSV parsing (C++ speed, Arrow memory layout)
+- Zero-copy DuckDB → Arrow output
+
+Both repositories are designed to live **side by side** on your filesystem:
+```
+Projects/
+├── cleanflow/            ← sibling library
+└── data-proc-benchmark/  ← this repo
+```
+
+### Step-by-step (uv)
+
+```bash
+# 1. Clone both repos into the same parent directory
+git clone https://github.com/lcabrp/cleanflow
+git clone https://github.com/lcabrp/data-proc-benchmark
+cd data-proc-benchmark
+
+# 2. Create the virtual environment and install benchmark dependencies
+uv sync
+
+# 3. Link cleanflow in editable mode (one-time, per environment)
+uv pip install -e ../cleanflow
+```
+
+### Step-by-step (pip)
+
+```bash
+# 1. Clone both repos into the same parent directory
+git clone https://github.com/lcabrp/cleanflow
+git clone https://github.com/lcabrp/data-proc-benchmark
+cd data-proc-benchmark
+
+# 2. Create and activate the virtual environment
+python -m venv .venv
+# Windows:
+.venv\Scripts\activate
+# macOS/Linux:
+source .venv/bin/activate
+
+# 3. Install benchmark dependencies
+pip install -e .
+
+# 4. Link cleanflow in editable mode (one-time, per environment)
+pip install -e ../cleanflow
+```
+
+> [!TIP]
+> **Why editable mode (`-e`)?**  
+> Installing with `-e` (editable / "development" mode) means Python imports
+> the library **directly from the source folder** on disk. If you pull updates to
+> `cleanflow` with `git pull`, the changes are active immediately — no reinstall needed.
+
+> [!NOTE]
+> **Verifying the install:** Run `uv run python -c "import cleanflow; print(cleanflow.__version__)"` (or `python -c ...` inside the activated venv). A version number confirms success.
+
+---
+
 ### 🆘 First-Time Setup Help
 
 **New to Python development?** Here's what you need:
@@ -383,4 +471,4 @@ This project is open source. See LICENSE file for details.
 
 **💡 Pro Tip**: Start with `benchmark_01.py` for reliable cross-platform results, then experiment with other versions based on your specific needs!
 
-Updated September 2025.
+Updated June 2026.

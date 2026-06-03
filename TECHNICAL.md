@@ -194,7 +194,82 @@ Over the course of development, multiple deep architectural optimizations were i
 - **Problem**: DuckDB's `complex_join` was taking ~12-13 seconds, making it the slowest operation by far. However, DuckDB was actually calculating the results instantly but stalling when converting the output back to a Pandas DataFrame using `.fetchdf()`. Additionally, DuckDB was double-scanning the 10M row disk file for self-joins.
 - **Solution**: We introduced `--duckdb-mode cached` to load the file into a temporary memory table, avoiding disk double-scans. Most importantly, we replaced `.fetchdf()` with `.fetch_arrow_table()`, leveraging zero-copy PyArrow materialization. This instantly dropped the execution time from ~13s to ~4s!
 
+## 🔗 CleanFlow Dependency
+
+`data-proc-benchmark` delegates its core data-loading and optimization pipeline to [**cleanflow**](https://github.com/lcabrp/cleanflow), a sibling library maintained in a separate repository. This follows the **DRY** (Don't Repeat Yourself) principle: instead of duplicating file-reading, dtype-casting, and caching logic across four benchmark scripts, everything lives in one well-tested library that is *dogfooded* directly by these benchmarks.
+
+### Sibling Repository Layout
+
+Both repos must sit **side by side** in the same parent directory:
+```
+Projects/
+├── cleanflow/            ← sibling library (source of truth for I/O & optimization)
+└── data-proc-benchmark/  ← this repo
+```
+
+### Installation (one-time, per environment)
+
+**Using uv (recommended):**
+```bash
+# From inside the data-proc-benchmark directory, after running `uv sync`:
+uv pip install -e ../cleanflow
+```
+
+**Using pip (inside activated venv):**
+```bash
+pip install -e ../cleanflow
+```
+
+The `-e` / editable flag means Python resolves imports directly from the `cleanflow/` source folder on disk. A `git pull` in that folder is instantly reflected — no reinstall required.
+
+**Verifying the install:**
+```bash
+uv run python -c "import cleanflow; print(cleanflow.__version__)"
+# or inside the activated venv:
+python -c "import cleanflow; print(cleanflow.__version__)"
+```
+
+### What CleanFlow Provides
+
+| CleanFlow module | Responsibility in this project |
+| :--- | :--- |
+| `cleanflow.io.load_dataset()` | Unified entry point — detects format, applies dtype hints, manages the Parquet cache |
+| `cleanflow.io.load_csv()` | Reads CSV with optional PyArrow engine (`engine='pyarrow'`, `dtype_backend='pyarrow'`) and read-time dtype injection |
+| `cleanflow.io.load_parquet()` | Reads raw Parquet via `pd.read_parquet()`; after loading, `load_dataset` applies `type_map` casts before writing to cache |
+| `cleanflow.apply_optimization()` | Post-load dtype downcasting (float64→float32, int64→uint32, object→category) using unsigned-aware `smallest_int_dtype` |
+| `cleanflow.optimization.backends.duckdb_backend` | Zero-copy `fetch_arrow_table()` output from DuckDB queries |
+
+### Optimized Parquet Cache Pipeline
+
+The cache key is a SHA-1 hash of: `{file path, file size, mtime_ns, type_map}`. This means:
+- Different `type_map` configurations produce different cache files.
+- If the source file changes on disk, the old cache is ignored and a new one is written.
+- Cache files are stored in `data/cache/optimized/` by default (configurable via `--optimized-cache-dir`).
+
+**Flow for a Parquet source:**
+```
+First run:
+  raw .parquet → pd.read_parquet() → apply type_map casts → write optimized .parquet to cache
+                                                               ↑ ~8s one-time cost
+
+Subsequent runs:
+  cache hit → pd.read_parquet(optimized_cache) ← ~0.22s
+```
+
+**Flow for a CSV source:**
+```
+First run:
+  .csv → pd.read_csv(engine=pyarrow, dtype hints) → write optimized .parquet to cache
+                                                      ↑ ~4-5s one-time cost
+
+Subsequent runs:
+  cache hit → pd.read_parquet(optimized_cache) ← ~0.23s
+```
+
+---
+
 ## Modules and Utilities
+
 
 ### utils/data_io.py
 Universal data IO layer and dataset helpers.
