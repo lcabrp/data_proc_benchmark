@@ -46,7 +46,7 @@ This benchmark tests popular data processing libraries against multi‑million r
 2. **Clone and Setup**:
    ```bash
    git clone <repository-url>
-   cd data_proc_benchmark
+   cd data-proc-benchmark
    uv sync  # Creates virtual environment and installs all dependencies
    # If 'uv' command not found, use: python -m uv sync
    ```
@@ -65,7 +65,7 @@ If you prefer the traditional Python workflow:
 1. **Clone the Repository**:
    ```bash
    git clone <repository-url>
-   cd data_proc_benchmark
+   cd data-proc-benchmark
    ```
 
 2. **Create Virtual Environment**:
