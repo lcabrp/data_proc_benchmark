@@ -17,6 +17,7 @@ contender_laptops = [
     "WL5040", # AMD Ryzen 8940HS
     "ZBookStudioG8", # i7-11850H
     "ZBookPowerG9-02", # i7-12800H
+    "ZBookPowerG10", # i5-13600H
     "IdeaPadPro5i-2", # Core Ultra 285H
     "IdeaPadPro5i", # Core Ultra 185H
     "Legion7-16IRX9" # i9-14900HX
