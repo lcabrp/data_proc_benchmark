@@ -20,7 +20,8 @@ contender_laptops = [
     "ZBookPowerG10", # i5-13600H
     "IdeaPadPro5i-2", # Core Ultra 285H
     "IdeaPadPro5i", # Core Ultra 185H
-    "Legion7-16IRX9" # i9-14900HX
+    "Legion7-16IRX9", # i9-14900HX
+    "ZBookFuryG9-02"  # i9-12950HX
 ]
 
 my_base_desktop = "HP-Z2-G9" # i9-12900
