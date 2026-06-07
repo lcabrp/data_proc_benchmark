@@ -12,15 +12,15 @@ DATASET_SIZE = 10_000_000
 VENV_PYTHON = PROJECT_ROOT / ".venv" / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
 PYTHON_EXE = VENV_PYTHON if VENV_PYTHON.exists() else Path(sys.executable)
 
-my_base_laptop = "ZBookFuryG9-02" # i7-12950HX
+my_base_laptop = "ZBookPowerG9-02" # i7-12800H
 contender_laptops = [
     "ZBookStudioG8", # i7-11850H
     "ZBookPowerG10", # i5-13600H
     "IdeaPadPro5i-2", # Core Ultra 285H
     "IdeaPadPro5i", # Core Ultra 185H
+    "ZBookFuryG9-02", # i9-12950HX
     "Legion7-16IRX9", # i9-14900HX
     "ZBookPowerG9-01",  # i9-12700H
-    "ZBookPowerG9-02", # i7-12800H
     "ZBookPowerG9-03" # i7-12800H
 ]
 
