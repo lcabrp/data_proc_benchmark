@@ -12,16 +12,16 @@ DATASET_SIZE = 10_000_000
 VENV_PYTHON = PROJECT_ROOT / ".venv" / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
 PYTHON_EXE = VENV_PYTHON if VENV_PYTHON.exists() else Path(sys.executable)
 
-my_base_laptop = "ZBookPowerG9-01" # i7-12700H
+my_base_laptop = "ZBookFuryG9-02" # i7-12950HX
 contender_laptops = [
-    "WL5040", # AMD Ryzen 8940HS
     "ZBookStudioG8", # i7-11850H
-    "ZBookPowerG9-02", # i7-12800H
     "ZBookPowerG10", # i5-13600H
     "IdeaPadPro5i-2", # Core Ultra 285H
     "IdeaPadPro5i", # Core Ultra 185H
     "Legion7-16IRX9", # i9-14900HX
-    "ZBookFuryG9-02"  # i9-12950HX
+    "ZBookPowerG9-01",  # i9-12700H
+    "ZBookPowerG9-02", # i7-12800H
+    "ZBookPowerG9-03" # i7-12800H
 ]
 
 my_base_desktop = "HP-Z2-G9" # i9-12900
@@ -34,6 +34,8 @@ my_older_laptop = "IdeaPadS340" # i7-1065G7
 base_bussiness_laptop = "WL1111" # i7-8656U
 business_laptops = [
     "WL5022" # i7-1185G7
+    ,"WL5040" # AMD Ryzen 8940HS
+
 ]
 workstation_laptops = []
 
