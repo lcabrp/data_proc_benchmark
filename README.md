@@ -197,7 +197,6 @@ PowerShell (Windows):
 ```
 
 Notes:
-- **Outlier removal is enabled by default** to provide more accurate comparisons. Add `--keep-outliers` to disable.
 - Outliers are detected using the IQR (Interquartile Range) method with 1.5x multiplier (Tukey's method).
 - Typical outlier removal rate: 1-2% of data (representing system anomalies like thermal throttling, background processes).
 - Exact hostnames only; if a name is wrong, the tool errors with suggestions.
