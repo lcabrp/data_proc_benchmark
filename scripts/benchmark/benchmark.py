@@ -26,6 +26,7 @@ from utils.data_io import read_data, find_dataset, get_dataset_size  # noqa: E40
 from utils.benchmark_prep import (  # noqa: E402
     PREP_COLUMNS,
     append_csv_row_with_schema,
+    build_script_name,
     decide_memory_optimization,
     get_prep_csv_values,
     load_pandas_like_for_benchmark,
@@ -711,21 +712,13 @@ def write_results_to_csv(results: dict, dataset_size: int) -> None:
     """Write benchmark results to CSV file with enhanced platform detection."""
     host_info = get_host_info()  # Now includes WSL detection automatically
     
-    # Create enhanced script name with optimization info
-    base_script_name = Path(__file__).name
-    try:
-        total_memory_gb = psutil.virtual_memory().total / (1024**3)
-        if _optimize_mode == "always":
-            opt_info = "opt_always"
-        elif _optimize_mode == "never":
-            opt_info = "opt_never"
-        elif _optimization_applied:
-            opt_info = f"opt_auto_mem{total_memory_gb:.0f}GB"
-        else:
-            opt_info = f"no_opt_auto_mem{total_memory_gb:.0f}GB"
-        script_name = f"{base_script_name}_{opt_info}"
-    except Exception:
-        script_name = f"{base_script_name}_opt_unknown"
+    # Create enhanced script name with optimization info (shared helper keeps all
+    # benchmark runners consistent; see utils.benchmark_prep.build_script_name).
+    script_name = build_script_name(
+        Path(__file__).name,
+        _optimize_mode,
+        _optimization_applied,
+    )
     
     _write_one_results_csv(RESULTS_CSV_PATH, results, host_info, script_name, dataset_size)
     print(f"\nResults written to: {RESULTS_CSV_PATH}")

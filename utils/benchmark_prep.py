@@ -143,6 +143,50 @@ def decide_memory_optimization(
     )
 
 
+def build_script_name(
+    base_name: str,
+    optimize_mode: str,
+    optimization_applied: bool,
+    total_memory_gb: Optional[float] = None,
+) -> str:
+    """Build a self-documenting ``script_name`` that encodes the optimize mode.
+
+    Produces values such as ``benchmark.py_opt_always``, ``benchmark_02.py_opt_never``
+    or ``benchmark_modular.py_opt_auto_mem32GB`` so the optimization state of each
+    run is recoverable directly from the results CSV. All four benchmark runners
+    share this single implementation to prevent label drift between scripts.
+
+    Args:
+        base_name: The bare script filename (e.g. ``"benchmark_02.py"``).
+        optimize_mode: One of ``"auto"``, ``"always"`` or ``"never"``.
+        optimization_applied: Whether dtype optimization was actually applied.
+            Only affects the ``auto`` mode suffix.
+        total_memory_gb: System RAM in GB; queried via psutil when ``None``.
+            Only used to annotate the ``auto`` mode suffix.
+
+    Returns:
+        The base name with an optimization suffix appended, e.g.
+        ``"benchmark.py_opt_always"``. Falls back to ``f"{base_name}_opt_unknown"``
+        when system memory cannot be determined.
+    """
+    try:
+        if total_memory_gb is None:
+            import psutil
+
+            total_memory_gb = psutil.virtual_memory().total / (1024**3)
+        if optimize_mode == "always":
+            opt_info = "opt_always"
+        elif optimize_mode == "never":
+            opt_info = "opt_never"
+        elif optimization_applied:
+            opt_info = f"opt_auto_mem{total_memory_gb:.0f}GB"
+        else:
+            opt_info = f"no_opt_auto_mem{total_memory_gb:.0f}GB"
+        return f"{base_name}_{opt_info}"
+    except Exception:
+        return f"{base_name}_opt_unknown"
+
+
 def csv_read_kwargs_for_types(type_map: dict) -> dict:
     """Build pandas read_csv kwargs from benchmark dtype optimization rules."""
     dtype: Dict[str, str] = {}

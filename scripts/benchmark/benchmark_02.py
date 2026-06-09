@@ -34,6 +34,7 @@ from utils.data_io import get_dataset_size as universal_dataset_size  # noqa: E4
 from utils.benchmark_prep import (  # noqa: E402
     PREP_COLUMNS,
     append_csv_row_with_schema,
+    build_script_name,
     decide_memory_optimization,
     get_prep_csv_values,
     load_pandas_like_for_benchmark,
@@ -836,6 +837,13 @@ if __name__ == "__main__":
         print(f"\n{'='*50}")
         print("SAVING RESULTS")
         print(f"{'='*50}")
+        decision = decide_memory_optimization(OPTIMIZE_MODE, MEMORY_THRESHOLD_GB)
+        script_name = build_script_name(
+            os.path.basename(__file__),
+            OPTIMIZE_MODE,
+            decision.should_optimize,
+            decision.total_memory_gb,
+        )
         save_results_to_csv(results, host_info, script_name, dataset_size)
 
         # Print summary - EXCLUDE ZERO DURATIONS FROM COMPARISON

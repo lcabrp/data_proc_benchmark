@@ -41,6 +41,7 @@ from utils.data_io import UniversalDataReader, get_dataset_size as universal_dat
 from utils.benchmark_prep import (  # noqa: E402
     PREP_COLUMNS,
     append_csv_row_with_schema,
+    build_script_name,
     decide_memory_optimization,
     get_prep_csv_values,
     load_pandas_like_for_benchmark,
@@ -1108,7 +1109,14 @@ def main():
     results = run_all_benchmarks(str(dataset_path), args.repeat)
 
     log_memory_usage("Final memory usage")
-    save_results_to_csv(results, raw_host_info, "benchmark_01.py", dataset_size, str(output_path), dataset_path)
+    decision = decide_memory_optimization(OPTIMIZE_MODE, MEMORY_THRESHOLD_GB)
+    script_name = build_script_name(
+        "benchmark_01.py",
+        OPTIMIZE_MODE,
+        decision.should_optimize,
+        decision.total_memory_gb,
+    )
+    save_results_to_csv(results, raw_host_info, script_name, dataset_size, str(output_path), dataset_path)
     print(f"Results saved to {output_path}")
 
     print_summary(results)

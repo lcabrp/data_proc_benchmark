@@ -31,6 +31,7 @@ from utils.data_io import UniversalDataReader, DatasetFinder  # noqa: E402
 from utils.benchmark_prep import (  # noqa: E402
     PREP_COLUMNS,
     append_csv_row_with_schema,
+    build_script_name,
     decide_memory_optimization,
     get_prep_csv_values,
     load_pandas_like_for_benchmark,
@@ -686,7 +687,12 @@ class ModularBenchmark:
         # Get host info
         host_info = get_host_info()
         dataset_size = self._get_dataset_size()
-        script_name = "benchmark_modular.py"
+        script_name = build_script_name(
+            "benchmark_modular.py",
+            self.optimize_mode,
+            self.optimization_decision.should_optimize,
+            self.optimization_decision.total_memory_gb,
+        )
         
         # Use the original CSV file location (data/benchmark_results.csv)
         original_results_file = self.config.project_root / "data" / "benchmark_results.csv"
