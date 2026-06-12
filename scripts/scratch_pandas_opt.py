@@ -18,14 +18,24 @@ sys.path.insert(0, str(project_root))
 import pandas as pd
 from utils.pandas_benchmark_ops import complex_join_top_ranked, timeseries_hour_counts
 
-DATASET_PATH = Path("data/raw/synthetic_logs_10M.csv")
+CSV_DATASET_PATH = Path("data/raw/synthetic_logs_10M.csv")
+PARQUET_DATASET_PATH = Path("data/raw/synthetic_logs_7M.parquet")
 
+DATASET_PATH = PARQUET_DATASET_PATH
+
+def read_dataset(ds: Path):
+    """Read dataset from CSV or Parquet file."""
+    if ds.suffix == ".csv":
+        return pd.read_csv(ds)
+    elif ds.suffix == ".parquet":
+        return pd.read_parquet(ds, engine="auto")
+    else:
+        raise ValueError(f"Unsupported file format: {ds.suffix}")
 
 def get_process_memory():
     """Return resident memory used by current process in MB."""
     process = psutil.Process()
     return process.memory_info().rss / (1024**2)
-
 
 def run_benchmark_ops(df):
     """Run all benchmark operations and return durations + memory stats."""
@@ -75,7 +85,8 @@ def benchmark_scenario_a():
     start_time = time.perf_counter()
     
     # Load DataFrame normally
-    df = pd.read_csv(DATASET_PATH)
+    df = read_dataset(PARQUET_DATASET_PATH)
+
     
     load_time = time.perf_counter() - start_time
     deep_mem = df.memory_usage(deep=True).sum() / (1024**2)
@@ -115,7 +126,7 @@ def benchmark_scenario_b():
     start_time = time.perf_counter()
     
     # Load DataFrame (will use PyArrow-backed strings globally under the hood!)
-    df = pd.read_csv(DATASET_PATH)
+    df = read_dataset(PARQUET_DATASET_PATH)
     
     load_time = time.perf_counter() - start_time
     deep_mem = df.memory_usage(deep=True).sum() / (1024**2)
