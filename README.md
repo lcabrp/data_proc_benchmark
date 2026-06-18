@@ -453,6 +453,8 @@ Parquet is usually smaller and faster to read. Use our helper:
    - `UniversalDataReader`: read CSV/Parquet/JSON/NDJSON via pandas, polars, or DuckDB
    - `DatasetFinder`: locate the best dataset automatically
    - `get_dataset_size(path)`: count records efficiently
+- `utils/benchmark_schema.py`: Shared constants used by all benchmark scripts, including `BENCHMARK_OPTIMIZATION_TYPES`, operation order, and library order.
+- `utils/benchmark_operations.py`: Shared strategy-pattern implementations of the four benchmark operations (filter/group, statistics, complex join, timeseries) for pandas, Polars, DuckDB, and FireDucks. The four benchmark scripts delegate to these classes through thin adapters so operation logic is maintained in one place while each script keeps its historical defaults.
 
 ## 🤝 Contributing
 

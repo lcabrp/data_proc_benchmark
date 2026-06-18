@@ -8,6 +8,9 @@ The format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.
 ## [Unreleased]
 
 ### Added
+- **Shared Benchmark Operation Modules**: New reusable strategy-pattern modules under `utils/`:
+  - `utils/benchmark_schema.py` - single source of truth for `BENCHMARK_OPTIMIZATION_TYPES`, operation order, and library order constants shared across all benchmark scripts.
+  - `utils/benchmark_operations.py` - shared `BenchmarkOperation` strategy classes (`FilterGroupOperation`, `StatisticsOperation`, `ComplexJoinOperation`, `TimeseriesOperation`) implementing the four benchmark operations for pandas, Polars, DuckDB SQL, and FireDucks.
 - **Memory Optimization Control**: New `--optimize {auto,always,never}` flag for flexible memory optimization
   - `auto` mode: Applies optimization based on system memory threshold (default: 16GB)
   - `always` mode: Forces optimization regardless of system memory
@@ -39,6 +42,8 @@ The format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.
 - Updated `benchmark_01.py` to use centralized platform detection
 - Updated `benchmark_02.py` to use centralized platform detection  
 - Updated `benchmark_modular.py` to use centralized platform detection
+- Refactored `benchmark.py`, `benchmark_01.py`, `benchmark_02.py`, `benchmark_modular.py`, and `benchmark_05.py` to delegate operation logic to shared `utils/benchmark_operations.py` strategy classes while preserving each script's historical result shapes and defaults.
+- Moved duplicated `BENCHMARK_OPTIMIZATION_TYPES` constants from each benchmark script into `utils/benchmark_schema.py`.
 - All benchmark scripts now show enhanced host information at startup
 - Improved memory usage reporting and cleanup messaging
 
@@ -49,6 +54,7 @@ The format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.
 - Unused imports and redundant functions in benchmark scripts
 - Commented-out manual detection code blocks
 - Duplicate header output in pandas/fireducks benchmark sequence
+- Inline operation implementations duplicated across the five benchmark scripts (replaced with shared strategy classes)
 
 ### Fixed
 - WSL environments now properly identified as "WSL2" instead of "Linux" in analysis
@@ -61,10 +67,12 @@ The format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.
 ### Technical Improvements
 - **DRY Principle**: Eliminated code duplication across benchmark scripts
 - **Centralized Logic**: All platform detection now in `utils/platform_utils.py`
+- **Shared Operations**: Benchmark operation logic centralized in `utils/benchmark_operations.py` using the strategy pattern; each script keeps thin adapters that preserve historical behavior.
+- **Shared Schema**: `BENCHMARK_OPTIMIZATION_TYPES` and operation/library ordering constants centralized in `utils/benchmark_schema.py`.
 - **Enhanced Analysis**: CSV data now supports clean platform-based filtering
 - **Better UX**: Users see clear system information before benchmarks run
 - **Future-Proof**: Ready for WSL3 and other platform variants
-- **Maintainable**: Single source of truth for platform detection logic
+- **Maintainable**: Single source of truth for platform detection logic and benchmark operation semantics
 
 ### Database/CSV Schema Changes
 - **system** column values:

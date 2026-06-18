@@ -22,6 +22,8 @@ data_proc_benchmark/
 │   ├── data_io.py                     # Universal file reading
 │   ├── host_info.py                   # System info collection
 │   ├── platform_utils.py              # Platform/library detection
+│   ├── benchmark_schema.py            # Shared benchmark constants
+│   ├── benchmark_operations.py        # Shared operation strategy classes
 │   └── useful_functions.py            # Shared utilities
 ├── analysis/                          # Benchmark result analysis
 ├── data/                              # Test datasets (10M rows)

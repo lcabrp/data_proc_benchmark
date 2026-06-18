@@ -296,6 +296,41 @@ Returns dictionary with:
 - Platform, Python version/implementation
 - CPU brand/arch (with graceful fallbacks)
 
+### utils/benchmark_schema.py
+Single source of truth for constants used by all benchmark scripts.
+
+- `BENCHMARK_OPTIMIZATION_TYPES`
+    - Maps target dtypes (`category`, `uint16`, `uint32`, `float32`, `datetime64[ns]`) to the column lists used by `load_pandas_like_for_benchmark` and `optimize_df_types`.
+- `OPERATION_ORDER`
+    - Canonical order of benchmark operations: `filter_group`, `statistics`, `complex_join`, `timeseries`.
+- `LIBRARY_ORDER`
+    - Canonical order of libraries: `pandas`, `polars`, `duckdb`, `fireducks`.
+
+Centralizing these values prevents the four benchmark scripts from drifting out of sync when columns are added or optimization rules change.
+
+### utils/benchmark_operations.py
+Shared benchmark operation implementations using the **strategy pattern**.
+
+Each operation is a class that implements the same logical work across all supported libraries:
+
+- `FilterGroupOperation`
+    - Filter `bytes > 1000`, group by `event_type`, count rows.
+- `StatisticsOperation`
+    - Group by `event_type`, compute mean/min/max for `bytes`, `response_time_ms`, and `risk_score`.
+- `ComplexJoinOperation`
+    - Sum `bytes` by `source_ip`, join back, rank by `total_bytes` within each `event_type`, keep top 10.
+    - Configurable `rank_col` (e.g., `bytes_rank` in `benchmark.py`, `total_rank` elsewhere) and `sort_by_rank`.
+- `TimeseriesOperation`
+    - Extract hour from `timestamp`, group by `(hour, event_type)`, count.
+    - Configurable `hour_name` and `reset_index` to preserve each script's historical output shape.
+
+Each class exposes:
+- `run_pandas(df)` / `run_fireducks(df)` - FireDucks reuses the pandas path by default.
+- `run_polars(df)`
+- `run_duckdb(expr, con)` - Executes the equivalent SQL via a DuckDB connection.
+
+Benchmark scripts keep thin adapter functions/methods that load data (or use a cached DataFrame) and call the appropriate `run_*` method. This preserves script-specific defaults while eliminating the duplication of 16 functions (4 operations × 4 libraries) that previously existed across the four scripts.
+
 ### scripts/tools/csv_to_parquet.py
 Convert CSV/NDJSON to Parquet with chunking and compression.
 
@@ -427,6 +462,8 @@ info = {
 - `host_info.py`: System information collection
 - `memory_utils.py`: Memory monitoring and logging
 - `platform_utils.py`: Platform detection and library availability
+- `benchmark_schema.py`: Shared benchmark constants (optimization types, operation/library ordering)
+- `benchmark_operations.py`: Shared benchmark operation implementations (strategy pattern)
 - `benchmark_01.py`: Core benchmarking logic (unchanged per requirements)
 
 **DRY Implementation**:

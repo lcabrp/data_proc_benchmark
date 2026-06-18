@@ -5,6 +5,7 @@ import pandas as pd
 pd.options.mode.copy_on_write = True
 pd.options.future.infer_string = True
 import polars as pl
+import duckdb
 import warnings
 import sys
 if sys.stdout.encoding != 'utf-8':
@@ -27,16 +28,6 @@ warnings.filterwarnings("ignore", category=SyntaxWarning, message=r"invalid esca
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, project_root)
 
-# Shared benchmark components: schema constants and operation implementations
-from utils.benchmark_schema import BENCHMARK_OPTIMIZATION_TYPES  # noqa: E402
-from utils.benchmark_operations import (  # noqa: E402
-    BenchmarkOperation,
-    FilterGroupOperation,
-    StatisticsOperation,
-    ComplexJoinOperation,
-    TimeseriesOperation,
-)
-
 from utils.host_info import get_host_info  # noqa: E402
 from utils.config import setup_project  # noqa: E402
 from utils.data_io import get_dataset_size as universal_dataset_size  # noqa: E402
@@ -51,7 +42,8 @@ from utils.benchmark_prep import (  # noqa: E402
     record_prep_timing,
     reset_prep_timings,
 )
-from utils.duckdb_utils import DuckDBBenchmarkSource  # noqa: E402
+from utils.duckdb_utils import DuckDBBenchmarkSource, duckdb_table_expr  # noqa: E402
+from utils.pandas_benchmark_ops import complex_join_top_ranked, timeseries_hour_counts  # noqa: E402
 from utils.useful_functions import optimize_df_types  # noqa: E402
 from utils.platform_utils import FIREDUCKS_AVAILABLE  # noqa: E402
 
@@ -74,12 +66,14 @@ def _should_optimize_for_library(library: str) -> bool:
     return decision.should_optimize
 
 
-# Shared operation strategy instances tuned to preserve benchmark_02.py's historical outputs.
-_FILTER_GROUP = FilterGroupOperation()
-_STATISTICS = StatisticsOperation()
-_COMPLEX_JOIN = ComplexJoinOperation(rank_col="total_rank", sort_by_rank=False)
-_TIMESERIES = TimeseriesOperation(reset_index=False, hour_name="_hour")
-
+BENCHMARK_OPTIMIZATION_TYPES = {
+    'datetime64[ns]': ['timestamp'],
+    'category': ['source_ip', 'destination_ip', 'protocol', 'event_type',
+                 'severity', 'user', 'status_code', 'country', 'device_type'],
+    'uint32': ['bytes', 'session_id'],
+    'uint16': ['response_time_ms', 'port'],
+    'float32': ['risk_score']
+}
 PREP_MEMORY_REPORT = "off"
 OPTIMIZED_CACHE_MODE = "off"
 OPTIMIZED_CACHE_DIR = Path(project_root) / "data" / "cache" / "optimized"
@@ -304,121 +298,231 @@ def run_polars_operation(func: Callable[[pl.DataFrame], Any],
         print(f"Polars operation failed: {e}")
         return None
 
-# Shared DuckDB dispatcher that respects the script's DUCKDB_SOURCE mode.
-def run_duckdb_operation(operation: BenchmarkOperation, csv_path: str) -> Any:
-    """Execute a shared operation via the script-level DuckDB source."""
+# Replace the DuckDB functions with self-contained versions
+
+def run_duckdb_operation(operation_func: Callable, csv_path: str) -> Any:
+    """Execute DuckDB operation with proper connection management."""
     try:
         with DUCKDB_SOURCE.query(csv_path) as (conn, source):
-            return operation.run_duckdb(source, conn)
+            return operation_func(source, conn)
     except Exception as e:
         print(f"DuckDB operation failed: {e}")
         return None
 
 
-# Library-specific operation adapters.  Each loads data (when not cached) and
-# delegates the actual work to a shared strategy instance.
+def _duckdb_source(path_or_expr: str) -> str:
+    if path_or_expr == DUCKDB_SOURCE.table_name or path_or_expr.startswith("read_"):
+        return path_or_expr
+    return duckdb_table_expr(path_or_expr)
 
-def pandas_filter_group(csv_path: str, cached_df: Optional[pd.DataFrame] = None) -> Any:
-    """Filter bytes > 1000, group by event_type, count."""
-    def op(df: pd.DataFrame) -> Any:
-        return _FILTER_GROUP.run_pandas(df)
-    return run_pandas_operation(op, csv_path, cached_df)
-
-
-def polars_filter_group(csv_path: str, cached_df: Optional[pl.DataFrame] = None) -> Any:
-    """Filter bytes > 1000, group by event_type, count."""
-    def func(df: pl.DataFrame) -> Any:
-        return _FILTER_GROUP.run_polars(df)
-    return run_polars_operation(func, csv_path, cached_df)
-
-
-def duckdb_filter_group(csv_path: str, cached_df: Optional[Any] = None) -> Any:
+def duckdb_filter_group(csv_path: str, cached_df: Optional[Any] = None) -> pd.DataFrame:
     """Filter bytes > 1000, group by event_type, count. (cached_df unused for consistency)"""
-    return run_duckdb_operation(_FILTER_GROUP, csv_path)
+    def operation(path: str, conn: duckdb.DuckDBPyConnection) -> pd.DataFrame:
+        source = _duckdb_source(path)
+        # Optimization (2026-05-24): Using fetch_arrow_table() instead of fetchdf()
+        # to eliminate severe pandas conversion overhead. DuckDB can output zero-copy PyArrow tables.
+        return conn.execute(f"""
+            SELECT event_type, COUNT(*) AS count
+            FROM {source}
+            WHERE bytes > 1000
+            GROUP BY event_type
+        """).fetch_arrow_table()
+    return run_duckdb_operation(operation, csv_path)
 
-
-def fireducks_filter_group(csv_path: str, cached_df: Optional[pd.DataFrame] = None) -> Any:
-    """Filter bytes > 1000, group by event_type, count."""
-    def op(df: pd.DataFrame) -> Any:
-        return _FILTER_GROUP.run_pandas(df)
-    return run_pandas_operation(op, csv_path, cached_df)
-
-
-def pandas_statistics(csv_path: str, cached_df: Optional[pd.DataFrame] = None) -> Any:
-    """Group by event_type, mean/min/max for bytes, response_time_ms, risk_score."""
-    def op(df: pd.DataFrame) -> Any:
-        return _STATISTICS.run_pandas(df)
-    return run_pandas_operation(op, csv_path, cached_df)
-
-
-def polars_statistics(csv_path: str, cached_df: Optional[pl.DataFrame] = None) -> Any:
-    """Group by event_type, mean/min/max for bytes, response_time_ms, risk_score."""
-    def func(df: pl.DataFrame) -> Any:
-        return _STATISTICS.run_polars(df)
-    return run_polars_operation(func, csv_path, cached_df)
-
-
-def duckdb_statistics(csv_path: str, cached_df: Optional[Any] = None) -> Any:
+def duckdb_statistics(csv_path: str, cached_df: Optional[Any] = None) -> pd.DataFrame:
     """Group by event_type, mean/min/max for bytes, response_time_ms, risk_score. (cached_df unused for consistency)"""
-    return run_duckdb_operation(_STATISTICS, csv_path)
+    def operation(path: str, conn: duckdb.DuckDBPyConnection) -> pd.DataFrame:
+        source = _duckdb_source(path)
+        # Optimization (2026-05-24): Using fetch_arrow_table() instead of fetchdf()
+        # to eliminate severe pandas conversion overhead. DuckDB can output zero-copy PyArrow tables.
+        return conn.execute(f"""
+            SELECT event_type,
+                   AVG(bytes) AS bytes_mean, MIN(bytes) AS bytes_min, MAX(bytes) AS bytes_max,
+                   AVG(response_time_ms) AS response_time_ms_mean,
+                   MIN(response_time_ms) AS response_time_ms_min,
+                   MAX(response_time_ms) AS response_time_ms_max,
+                   AVG(risk_score) AS risk_score_mean,
+                   MIN(risk_score) AS risk_score_min,
+                   MAX(risk_score) AS risk_score_max
+            FROM {source}
+            GROUP BY event_type
+        """).fetch_arrow_table()
+    return run_duckdb_operation(operation, csv_path)
 
-
-def fireducks_statistics(csv_path: str, cached_df: Optional[pd.DataFrame] = None) -> Any:
-    """Group by event_type, mean/min/max for bytes, response_time_ms, risk_score."""
-    def op(df: pd.DataFrame) -> Any:
-        return _STATISTICS.run_pandas(df)
-    return run_pandas_operation(op, csv_path, cached_df)
-
-
-def pandas_complex_join(csv_path: str, cached_df: Optional[pd.DataFrame] = None) -> Any:
-    """Sum bytes by source_ip, join back, rank by total_bytes per event_type, top 10."""
-    def op(df: pd.DataFrame) -> Any:
-        return _COMPLEX_JOIN.run_pandas(df)
-    return run_pandas_operation(op, csv_path, cached_df)
-
-
-def polars_complex_join(csv_path: str, cached_df: Optional[pl.DataFrame] = None) -> Any:
-    """Sum bytes by source_ip, join back, rank by total_bytes per event_type, top 10."""
-    def func(df: pl.DataFrame) -> Any:
-        return _COMPLEX_JOIN.run_polars(df)
-    return run_polars_operation(func, csv_path, cached_df)
-
-
-def duckdb_complex_join(csv_path: str, cached_df: Optional[Any] = None) -> Any:
+def duckdb_complex_join(csv_path: str, cached_df: Optional[Any] = None) -> pd.DataFrame:
     """Sum bytes by source_ip, join back, rank by total_bytes per event_type, top 10. (cached_df unused for consistency)"""
-    return run_duckdb_operation(_COMPLEX_JOIN, csv_path)
+    def operation(path: str, conn: duckdb.DuckDBPyConnection) -> pd.DataFrame:
+        source = _duckdb_source(path)
+        # Optimization (2026-05-24): Using fetch_arrow_table() instead of fetchdf()
+        # to eliminate severe pandas conversion overhead. DuckDB can output zero-copy PyArrow tables.
+        return conn.execute(f"""
+            WITH summary AS (
+                SELECT source_ip, SUM(bytes) AS total_bytes
+                FROM {source}
+                GROUP BY source_ip
+            ),
+            joined AS (
+                SELECT d.*, s.total_bytes
+                FROM {source} d
+                JOIN summary s USING (source_ip)
+            ),
+            ranked AS (
+                SELECT *, DENSE_RANK() OVER (
+                    PARTITION BY event_type ORDER BY total_bytes DESC
+                ) AS total_rank
+                FROM joined
+            )
+            SELECT * FROM ranked WHERE total_rank <= 10
+        """).fetch_arrow_table()
+    return run_duckdb_operation(operation, csv_path)
 
+def duckdb_timeseries(csv_path: str, cached_df: Optional[Any] = None) -> pd.DataFrame:
+    """Extract hour from timestamp, group by (hour, event_type), count. (cached_df unused for consistency)"""
+    def operation(path: str, conn: duckdb.DuckDBPyConnection) -> pd.DataFrame:
+        source = _duckdb_source(path)
+        # Optimization (2026-05-24): Using fetch_arrow_table() instead of fetchdf()
+        # to eliminate severe pandas conversion overhead. DuckDB can output zero-copy PyArrow tables.
+        try:
+            return conn.execute(f"""
+                SELECT date_part('hour', CAST(timestamp AS TIMESTAMP)) AS hour,
+                       event_type,
+                       COUNT(*) AS count
+                FROM {source}
+                GROUP BY hour, event_type
+            """).fetch_arrow_table()
+        except Exception:
+            return conn.execute(f"""
+                SELECT 0 AS hour, event_type, COUNT(*) AS count
+                FROM {source}
+                GROUP BY event_type
+            """).fetch_arrow_table()
+    return run_duckdb_operation(operation, csv_path)
 
-def fireducks_complex_join(csv_path: str, cached_df: Optional[pd.DataFrame] = None) -> Any:
-    """Sum bytes by source_ip, join back, rank by total_bytes per event_type, top 10."""
-    def op(df: pd.DataFrame) -> Any:
-        return _COMPLEX_JOIN.run_pandas(df)
+# Operation 1: Filter and Group (aligned with benchmark.py) - CACHING AWARE ONLY
+def pandas_filter_group(csv_path: str, cached_df: Optional[pd.DataFrame] = None) -> pd.Series:
+    """Filter bytes > 1000, group by event_type, count."""
+    def op(df: pd.DataFrame) -> Optional[pd.Series]:
+        if "bytes" not in df.columns or "event_type" not in df.columns:
+            return None
+        filtered = df[df["bytes"] > 1000]
+        return filtered.groupby("event_type", observed=False).size()
     return run_pandas_operation(op, csv_path, cached_df)
 
-
-def pandas_timeseries(csv_path: str, cached_df: Optional[pd.DataFrame] = None) -> Any:
-    """Extract hour from timestamp, group by (hour, event_type), count."""
-    def op(df: pd.DataFrame) -> Any:
-        return _TIMESERIES.run_pandas(df)
-    return run_pandas_operation(op, csv_path, cached_df)
-
-
-def polars_timeseries(csv_path: str, cached_df: Optional[pl.DataFrame] = None) -> Any:
-    """Extract hour from timestamp, group by (hour, event_type), count."""
-    def func(df: pl.DataFrame) -> Any:
-        return _TIMESERIES.run_polars(df)
+def polars_filter_group(csv_path: str, cached_df: Optional[pl.DataFrame] = None) -> pl.DataFrame:
+    """Filter bytes > 1000, group by event_type, count."""
+    def func(df: pl.DataFrame) -> Optional[pl.DataFrame]:
+        if not {"bytes", "event_type"}.issubset(set(df.columns)):
+            return None
+        return df.filter(pl.col("bytes") > 1000).group_by("event_type").agg(pl.len().alias("count"))
     return run_polars_operation(func, csv_path, cached_df)
 
+def fireducks_filter_group(csv_path: str, cached_df: Optional[pd.DataFrame] = None) -> pd.Series:
+    """Filter bytes > 1000, group by event_type, count."""
+    def op(df: pd.DataFrame) -> Optional[pd.Series]:
+        if "bytes" not in df.columns or "event_type" not in df.columns:
+            return None
+        return df[df["bytes"] > 1000].groupby("event_type").size()
+    return run_pandas_operation(op, csv_path, cached_df)
 
-def duckdb_timeseries(csv_path: str, cached_df: Optional[Any] = None) -> Any:
-    """Extract hour from timestamp, group by (hour, event_type), count. (cached_df unused for consistency)"""
-    return run_duckdb_operation(_TIMESERIES, csv_path)
+# Operation 2: Statistical Analysis (aligned with benchmark.py) - CACHING AWARE ONLY
+def pandas_statistics(csv_path: str, cached_df: Optional[pd.DataFrame] = None) -> pd.DataFrame:
+    """Group by event_type, mean/min/max for bytes, response_time_ms, risk_score."""
+    def op(df: pd.DataFrame) -> Optional[pd.DataFrame]:
+        req = {"event_type", "bytes", "response_time_ms", "risk_score"}
+        if not req.issubset(df.columns):
+            return None
+        return df.groupby("event_type", observed=False).agg({
+            "bytes": ["mean", "min", "max"],
+            "response_time_ms": ["mean", "min", "max"],
+            "risk_score": ["mean", "min", "max"]
+        })
+    return run_pandas_operation(op, csv_path, cached_df)
 
+def polars_statistics(csv_path: str, cached_df: Optional[pl.DataFrame] = None) -> pl.DataFrame:
+    """Group by event_type, mean/min/max for bytes, response_time_ms, risk_score."""
+    def func(df: pl.DataFrame) -> Optional[pl.DataFrame]:
+        req = {"event_type", "bytes", "response_time_ms", "risk_score"}
+        if not req.issubset(set(df.columns)):
+            return None
+        return df.group_by("event_type").agg([
+            pl.col("bytes").mean().alias("bytes_mean"),
+            pl.col("bytes").min().alias("bytes_min"),
+            pl.col("bytes").max().alias("bytes_max"),
+            pl.col("response_time_ms").mean().alias("response_time_ms_mean"),
+            pl.col("response_time_ms").min().alias("response_time_ms_min"),
+            pl.col("response_time_ms").max().alias("response_time_ms_max"),
+            pl.col("risk_score").mean().alias("risk_score_mean"),
+            pl.col("risk_score").min().alias("risk_score_min"),
+            pl.col("risk_score").max().alias("risk_score_max")
+        ])
+    return run_polars_operation(func, csv_path, cached_df)
 
-def fireducks_timeseries(csv_path: str, cached_df: Optional[pd.DataFrame] = None) -> Any:
+def fireducks_statistics(csv_path: str, cached_df: Optional[pd.DataFrame] = None) -> pd.DataFrame:
+    """Group by event_type, mean/min/max for bytes, response_time_ms, risk_score."""
+    def op(df: pd.DataFrame) -> Optional[pd.DataFrame]:
+        req = {"event_type", "bytes", "response_time_ms", "risk_score"}
+        if not req.issubset(df.columns):
+            return None
+        return df.groupby("event_type").agg({
+            "bytes": ["mean", "min", "max"],
+            "response_time_ms": ["mean", "min", "max"],
+            "risk_score": ["mean", "min", "max"]
+        })
+    return run_pandas_operation(op, csv_path, cached_df)
+
+# Operation 3: Complex Join (aligned with benchmark.py) - CACHING AWARE ONLY
+def pandas_complex_join(csv_path: str, cached_df: Optional[pd.DataFrame] = None) -> pd.DataFrame:
+    """Sum bytes by source_ip, join back, rank by total_bytes per event_type, top 10."""
+    def op(df: pd.DataFrame) -> Optional[pd.DataFrame]:
+        return complex_join_top_ranked(df, rank_col="total_rank", observed=False)
+    return run_pandas_operation(op, csv_path, cached_df)
+
+def polars_complex_join(csv_path: str, cached_df: Optional[pl.DataFrame] = None) -> pl.DataFrame:
+    """Sum bytes by source_ip, join back, rank by total_bytes per event_type, top 10."""
+    def func(df: pl.DataFrame) -> Optional[pl.DataFrame]:
+        if not {"source_ip", "bytes", "event_type"}.issubset(set(df.columns)):
+            return None
+        summary = df.group_by("source_ip").agg(pl.col("bytes").sum().alias("total_bytes"))
+        joined = df.join(summary, on="source_ip", how="left")
+        ranked = joined.with_columns(
+            pl.col("total_bytes").rank("dense", descending=True).over("event_type").alias("total_rank")
+        )
+        return ranked.filter(pl.col("total_rank") <= 10)
+    return run_polars_operation(func, csv_path, cached_df)
+
+def fireducks_complex_join(csv_path: str, cached_df: Optional[pd.DataFrame] = None) -> pd.DataFrame:
+    """Sum bytes by source_ip, join back, rank by total_bytes per event_type, top 10."""
+    def op(df: pd.DataFrame) -> Optional[pd.DataFrame]:
+        return complex_join_top_ranked(df, rank_col="total_rank", observed=False)
+    return run_pandas_operation(op, csv_path, cached_df)
+
+# Operation 4: Time Series (aligned with benchmark.py) - CACHING AWARE ONLY
+def pandas_timeseries(csv_path: str, cached_df: Optional[pd.DataFrame] = None) -> pd.Series:
     """Extract hour from timestamp, group by (hour, event_type), count."""
-    def op(df: pd.DataFrame) -> Any:
-        return _TIMESERIES.run_pandas(df)
+    def op(df: pd.DataFrame) -> Optional[pd.Series]:
+        return timeseries_hour_counts(df, observed=False, reset_index=False, hour_name="_hour")
+    return run_pandas_operation(op, csv_path, cached_df)
+
+def polars_timeseries(csv_path: str, cached_df: Optional[pl.DataFrame] = None) -> pl.DataFrame:
+    """Extract hour from timestamp, group by (hour, event_type), count."""
+    def func(df: pl.DataFrame) -> Optional[pl.DataFrame]:
+        if "event_type" not in df.columns:
+            return None
+        if "timestamp" in df.columns:
+            if df["timestamp"].dtype == pl.Utf8:
+                hour_expr = pl.col("timestamp").str.slice(11, 2).cast(pl.UInt8)
+            else:
+                hour_expr = pl.col("timestamp").dt.hour()
+            df2 = df.with_columns(hour_expr.alias("_hour"))
+        else:
+            df2 = df.with_columns(pl.lit(0).alias("_hour"))
+        return df2.group_by(["_hour", "event_type"]).agg(pl.len().alias("count"))
+    return run_polars_operation(func, csv_path, cached_df)
+
+def fireducks_timeseries(csv_path: str, cached_df: Optional[pd.DataFrame] = None) -> pd.Series:
+    """Extract hour from timestamp, group by (hour, event_type), count."""
+    def op(df: pd.DataFrame) -> Optional[pd.Series]:
+        return timeseries_hour_counts(df, observed=False, reset_index=False, hour_name="_hour")
     return run_pandas_operation(op, csv_path, cached_df)
 
 # Benchmark runner with single-load caching - LIBRARY BY LIBRARY EXECUTION
