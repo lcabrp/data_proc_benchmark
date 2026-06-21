@@ -1,0 +1,164 @@
+{
+  "host_a": "ZBookPowerG9-02",
+  "host_b": "Legion5-16IAX10",
+  "tie_threshold_pct": 5.0,
+  "overall": {
+    "summary_a": {
+      "rows": 0,
+      "cpu_brand": null,
+      "cpu_logical_mean": null,
+      "cpu_physical_mean": null,
+      "mem_total_mean": null,
+      "mem_avail_mean": null,
+      "libs": {}
+    },
+    "summary_b": {
+      "rows": 0,
+      "cpu_brand": null,
+      "cpu_logical_mean": null,
+      "cpu_physical_mean": null,
+      "mem_total_mean": null,
+      "mem_avail_mean": null,
+      "libs": {}
+    },
+    "relative": {
+      "overall_mean_pct": null,
+      "overall_median_pct": null,
+      "overall_best_pct": null,
+      "libs_pct": {
+        "pandas": null,
+        "polars": null,
+        "duckdb": null,
+        "fireducks": null
+      }
+    }
+  },
+  "by_os": [],
+  "meta": {
+    "version": 2,
+    "generated_at_utc": "2026-06-21T11:23:49.148682+00:00",
+    "generated_via": "compute",
+    "source_report": null,
+    "csv": {
+      "path": "C:\\Users\\lcabr\\Documents\\Projects\\data-proc-benchmark\\data\\benchmark_results.csv",
+      "size_bytes": 731375,
+      "mtime_epoch": 1782006636.6710098
+    },
+    "args": {
+      "hosts": [
+        "ZBookPowerG9-02",
+        "Legion5-16IAX10"
+      ],
+      "formats": null,
+      "dataset_size": 10000000,
+      "dataset_names": null,
+      "allow_mixed_datasets": false,
+      "libs": null,
+      "tie_threshold_pct": 5.0,
+      "os_filter": null,
+      "since": null
+    },
+    "signature": {
+      "ZBookPowerG9-02": {
+        "rows": 16,
+        "max_timestamp": "2026-06-03T07:42:25.462383",
+        "datasets": {
+          "10000000|synthetic_logs_10M.csv|csv": 8,
+          "10000000|synthetic_logs_10M.parquet|parquet": 8
+        }
+      },
+      "Legion5-16IAX10": {
+        "rows": 12,
+        "max_timestamp": "2026-03-22T13:50:26.964044",
+        "datasets": {
+          "10000000|synthetic_logs_10M.csv|csv": 6,
+          "10000000|synthetic_logs_10M.parquet|parquet": 6
+        }
+      }
+    },
+    "outliers_removed": true
+  },
+  "memory_filter": {
+    "applied": false,
+    "reason": "Insufficient memory data"
+  },
+  "os_intersection_filter": {
+    "applied": true,
+    "host_a_os": [
+      "WSL2",
+      "Windows"
+    ],
+    "host_b_os": [
+      "Linux"
+    ],
+    "common_os": [],
+    "excluded_os": [
+      "Linux",
+      "WSL2",
+      "Windows"
+    ],
+    "reason": "Excluded OS environments not shared by both hosts: ['Linux', 'WSL2', 'Windows']. Comparison restricted to: []"
+  },
+  "dataset_filter": {
+    "applied": true,
+    "reason": "Restricted to requested dataset_size=10,000,000",
+    "requested_size": 10000000,
+    "selected_size": 10000000,
+    "auto_selected": false,
+    "allow_mixed_datasets": false,
+    "requested_names": null,
+    "common_sizes": [
+      10000000
+    ],
+    "host_a_sizes": [
+      10000000
+    ],
+    "host_b_sizes": [
+      10000000
+    ],
+    "original_counts": {
+      "host_a": 16,
+      "host_b": 12
+    },
+    "filtered_counts": {
+      "host_a": 16,
+      "host_b": 12
+    },
+    "removed_counts": {
+      "host_a": 0,
+      "host_b": 0
+    },
+    "datasets_before": {
+      "host_a": {
+        "10000000|synthetic_logs_10M.csv|csv": 8,
+        "10000000|synthetic_logs_10M.parquet|parquet": 8
+      },
+      "host_b": {
+        "10000000|synthetic_logs_10M.csv|csv": 6,
+        "10000000|synthetic_logs_10M.parquet|parquet": 6
+      }
+    },
+    "datasets_after": {
+      "host_a": {
+        "10000000|synthetic_logs_10M.csv|csv": 8,
+        "10000000|synthetic_logs_10M.parquet|parquet": 8
+      },
+      "host_b": {
+        "10000000|synthetic_logs_10M.csv|csv": 6,
+        "10000000|synthetic_logs_10M.parquet|parquet": 6
+      }
+    }
+  },
+  "outliers_removed": {
+    "ZBookPowerG9-02": {
+      "original": 0,
+      "removed": 0,
+      "remaining": 0
+    },
+    "Legion5-16IAX10": {
+      "original": 0,
+      "removed": 0,
+      "remaining": 0
+    }
+  }
+}

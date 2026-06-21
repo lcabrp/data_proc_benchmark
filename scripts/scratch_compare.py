@@ -12,16 +12,17 @@ DATASET_SIZE = 10_000_000
 VENV_PYTHON = PROJECT_ROOT / ".venv" / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
 PYTHON_EXE = VENV_PYTHON if VENV_PYTHON.exists() else Path(sys.executable)
 
-my_base_laptop = "ZBookPowerG9-02" # i7-12800H
+my_base_laptop = "ZBookPowerG9-03" # i7-12800H
 contender_laptops = [
-    "ZBookStudioG8", # i7-11850H
-    "ZBookPowerG10", # i5-13600H
-    "IdeaPadPro5i-2", # Core Ultra 285H
-    "IdeaPadPro5i", # Core Ultra 185H
-    "ZBookFuryG9-02", # i9-12950HX
-    "Legion7-16IRX9", # i9-14900HX
-    "ZBookPowerG9-01",  # i9-12700H
-    "ZBookPowerG9-03" # i7-12800H
+    "ZBookStudioG8" # i7-11850H
+    , "ZBookPowerG10" # i5-13600H
+    , "IdeaPadPro5i" # Core Ultra 185H
+    , "IdeaPadPro5i-2" # Core Ultra 285H
+    , "ZBookFuryG9-02" # i9-12950HX
+    , "Legion7-16IRX9" # i9-14900HX
+    , "ZBookPowerG9-01"  # i9-12700H
+    , "ZBookPowerG9-02" # i7-12800H
+    , "Legion5-16IAX10" # Ultra 9 275HX
 ]
 
 my_base_desktop = "HP-Z2-G9" # i9-12900
@@ -35,6 +36,7 @@ base_bussiness_laptop = "WL1111" # i7-8656U
 business_laptops = [
     "WL5022" # i7-1185G7
     ,"WL5040" # AMD Ryzen 8940HS
+    , "HP-EB830G6-01", #i5-8365U
 
 ]
 workstation_laptops = []
@@ -84,6 +86,10 @@ for host in compare_to:
             host_sum = sum_a
         else:
             raise ValueError(f"Comparison output does not include target host {target!r}")
+
+        os_filter = data.get("os_intersection_filter", {})
+        common_os = os_filter.get("common_os") or []
+        no_common_os = not common_os and bool(os_filter.get("applied"))
         
         pct = rel.get("overall_mean_pct")
         
@@ -91,7 +97,9 @@ for host in compare_to:
         h_mean = host_sum.get("overall_mean")
         
         tie_thresh = data.get("tie_threshold_pct", 5.0)
-        if pct is None or t_mean is None or h_mean is None:
+        if no_common_os:
+            winner = "No common OS"
+        elif pct is None or t_mean is None or h_mean is None:
             winner = "N/A"
         elif abs(pct) < tie_thresh:
             winner = "Tie"
@@ -102,9 +110,9 @@ for host in compare_to:
             
         results.append({
             "host": host,
-            "host_cpu": host_sum.get("cpu_brand", "Unknown"),
+            "host_cpu": host_sum.get("cpu_brand") or "N/A",
             "host_ram": host_sum.get("mem_total_mean", 0),
-            "target_cpu": target_sum.get("cpu_brand", "Unknown"),
+            "target_cpu": target_sum.get("cpu_brand") or "N/A",
             "target_ram": target_sum.get("mem_total_mean", 0),
             "winner": winner,
             "percent_diff": pct,
@@ -134,6 +142,9 @@ for r in results:
     # positive -> host is faster; negative -> host is slower
     if r['winner'] == "Tie":
         direction = f"Tie (within {diff_str})"
+    elif r['winner'] == "No common OS":
+        os_filter = r['data'].get("os_intersection_filter", {})
+        direction = os_filter.get("reason") or "No shared OS environments"
     elif r['winner'] == "N/A":
         direction = "N/A"
     elif pct is not None and pct > 0:
