@@ -911,13 +911,13 @@
   ],
   "meta": {
     "version": 2,
-    "generated_at_utc": "2026-06-21T11:33:35.099943+00:00",
+    "generated_at_utc": "2026-06-21T12:45:04.008081+00:00",
     "generated_via": "compute",
     "source_report": null,
     "csv": {
       "path": "C:\\Users\\lcabr\\Documents\\Projects\\data-proc-benchmark\\data\\benchmark_results.csv",
-      "size_bytes": 731363,
-      "mtime_epoch": 1782041594.2629051
+      "size_bytes": 736200,
+      "mtime_epoch": 1782045896.1791246
     },
     "args": {
       "hosts": [
