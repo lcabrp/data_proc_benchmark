@@ -78,7 +78,7 @@ def show_df_info(df: pd.DataFrame) -> None:
     """
     Display information about a DataFrame including the top few rows, column names, shape, and data types.
     """
-    if type(df) != pd.DataFrame:
+    if not isinstance(df, pd.DataFrame):
         raise TypeError("Expected a pandas DataFrame")
 
     print("\nFirst few rows of the DataFrame:")
@@ -374,7 +374,7 @@ def print_optimization_report(
 def get_safe_int_type(series: pd.Series) -> str:
     """Determine the smallest safe integer type for a series"""
 
-    if type(series) != pd.Series:
+    if not isinstance(series, pd.Series):
         raise TypeError("Expected a pandas Series")
 
     min_val = series.min()
@@ -435,7 +435,7 @@ def optimize_df_types_old( df: pd.DataFrame, df_types: dict) -> pd.DataFrame:
 
 def get_missing_values(df: pd.DataFrame) -> pd.Series:
     """Get the number of missing values in each column of a DataFrame"""
-    if type(df) != pd.DataFrame:
+    if not isinstance(df, pd.DataFrame):
         raise TypeError("Expected a pandas DataFrame")
     return df.isnull().sum()
 
@@ -451,9 +451,9 @@ def check_primary_key_candidates(df: pd.DataFrame, columns: list) -> dict:
         dict: Results for each column with uniqueness and null information
     """
     # Input validation
-    if type(df) != pd.DataFrame:
+    if not isinstance(df, pd.DataFrame):
         raise TypeError("Expected a pandas DataFrame")
-    if type(columns) != list:
+    if not isinstance(columns, list):
         raise TypeError("Expected a list of column names")
     if not all(isinstance(col, str) for col in columns):
         raise TypeError("Column names must be strings")
@@ -514,7 +514,7 @@ def display_primary_key_analysis(pk_results: dict) -> None:
     for col, result in pk_results.items():
         if result['status'] == 'COLUMN_NOT_FOUND':
             print(f"\nPrimary Key Analysis for '{col}':")
-            print(f"  Column not found in DataFrame")
+            print("  Column not found in DataFrame")
             continue
 
         print(f"\nPrimary Key Analysis for '{col}':")
@@ -526,7 +526,7 @@ def display_primary_key_analysis(pk_results: dict) -> None:
 
         # Show sample duplicates if available
         if result['sample_duplicates']:
-            print(f"  Sample duplicates:")
+            print("  Sample duplicates:")
             for value, count in result['sample_duplicates'].items():
                 print(f"    '{value}': appears {count} times")
 

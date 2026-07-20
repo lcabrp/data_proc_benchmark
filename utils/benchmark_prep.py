@@ -12,8 +12,6 @@ from typing import Any, Dict, Iterable, Optional
 
 import pandas as pd
 
-from utils.useful_functions import optimize_df_types
-
 PREP_COLUMNS = [
     "prep_pandas_seconds",
     "prep_polars_seconds",

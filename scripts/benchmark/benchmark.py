@@ -1,18 +1,21 @@
 """Original Comprehensive Data Processing Benchmark (with CLI dataset override)."""
+import argparse
 import gc
+import os
+import sys
 import time
+from contextlib import redirect_stderr, redirect_stdout
+from pathlib import Path
+from typing import Any, cast, Optional
+
 import pandas as pd
+
 # Enable global Pandas 3.0 future defaults for optimized memory and speed
 pd.options.mode.copy_on_write = True
 pd.options.future.infer_string = True
-import sys
+
 if sys.stdout.encoding != 'utf-8':
     sys.stdout.reconfigure(encoding='utf-8')
-import argparse
-import os
-from contextlib import redirect_stderr, redirect_stdout
-from typing import Any, cast, Optional
-from pathlib import Path
 
 # Add the project root to Python path for utils import
 project_root = Path(__file__).resolve().parents[2]

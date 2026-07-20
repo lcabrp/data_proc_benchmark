@@ -12,7 +12,6 @@ from typing import Any, Dict, List, Optional, Union
 
 import pandas as pd
 import polars as pl
-import duckdb
 import cleanflow
 
 
@@ -170,8 +169,6 @@ class UniversalDataReader:
                 **kwargs
             )
         elif file_format == 'parquet':
-            parquet_kwargs = {k: v for k, v in kwargs.items()
-                              if k not in ['compression', 'delimiter', 'sep', 'nrows', 'type_map', 'use_dtype_hints']}
             df = cleanflow.io.load_parquet(file_path)
             if usecols:
                 df = df[usecols]
@@ -207,8 +204,6 @@ class UniversalDataReader:
                 polars_kwargs['n_rows'] = nrows
             if columns is not None:
                 polars_kwargs['columns'] = columns
-            parquet_kwargs = {k: v for k, v in polars_kwargs.items()
-                              if k not in ['compression', 'delimiter', 'sep', 'type_map', 'use_dtype_hints']}
             return cleanflow.io.load_parquet_polars(file_path)
         elif file_format == 'json':
             json_kwargs = {k: v for k, v in polars_kwargs.items() if k not in ['columns', 'n_rows', 'type_map', 'use_dtype_hints']}
