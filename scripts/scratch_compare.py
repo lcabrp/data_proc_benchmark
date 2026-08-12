@@ -52,16 +52,19 @@ contender_laptops = [
     , "Legion5-16IAX10" # Ultra 9 275HX
 ]
 
-my_base_desktop = "HP-Z2-G9" # i9-12900
+my_base_desktop = "OptPlex-7020-3" # i5-14600
 contender_desktops = [
-    "OptPlex-7020-3" # i5-14600
+    "HP-Z2-G9" # i9-12900
     ,"TS-P350-01" # i7-11700
+    ,"LnvThkCtr-01" # i7-12700T
+    , "XPS-8960" # i9-13900K
+    , "Optiplex7010" # i9-13900
 ]
 
-my_older_laptop = "IdeaPadS340" # i7-1065G7
+my_current_laptop = "WL5022" # i7-1185G7
 base_bussiness_laptop = "WL1111" # i7-8656U
 business_laptops = [
-    "WL5022" # i7-1185G7
+    "IdeaPadS340" # i7-1065G7
     , "WL5040" # AMD Ryzen 8940HS
     , "HP-EB830G6-01" #i5-8365U
     , "HP-EB-G6-SJ" # i5-8365U
@@ -71,8 +74,8 @@ business_laptops = [
 workstation_laptops = []
 
 
-target = my_older_laptop
-compare_to = business_laptops
+target = my_base_desktop
+compare_to = contender_desktops
 
 results = []
 errors = []
